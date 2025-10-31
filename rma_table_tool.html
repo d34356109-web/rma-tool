@@ -663,54 +663,8 @@ TCC84056000-ACX710-01 (Reference ID)
 
         // 頁面載入時執行一次初始化
         window.onload = function() {
-            // 載入預設範例資料 1 (標準 RMA 格式)
-            rmaItems.push({
-                id: Date.now() + 1,
-                rmaNo: 'R200591359',
-                defectiveSn: 'TU8SA68128',
-                productID: 'ACX710DC',
-                productDesc: 'ACX710 DC, HW and OS',
-                replacementSn: 'QCS2747V1B1',
-                trackingNumber: '39250014444',
-                notes: 'FPC 0 PEM 0 Feed B not connected.'
-            });
-            // 載入預設範例資料 2 (標準 RMA 格式)
-            rmaItems.push({
-                id: Date.now() + 2,
-                rmaNo: 'R200591920',
-                defectiveSn: 'QGS1827V04E',
-                productID: 'PWR-MX960-4100-DC',
-                productDesc: 'PWR-MX960 Power Supply',
-                replacementSn: 'QGS2747V1B1',
-                trackingNumber: '39250014444',
-                notes: 'PEM3 Fan Failed'
-            });
+            // 預設不載入任何範例資料，從空白開始
             
-            // 載入使用者提供的新範例 (換貨格式 - 舊)
-            rmaItems.push({
-                id: Date.now() + 3,
-                rmaNo: '', 
-                defectiveSn: 'TU8SA79237',
-                productID: 'ACX710', 
-                productDesc: '',
-                replacementSn: 'TU8SB95388',
-                trackingNumber: '',
-                notes: 'TCC84056000-ACX710-01 PEM 0 Feed B Not OK'
-            });
-
-            // 載入使用者提供的新範例 (換貨格式 - 新簡短)
-            rmaItems.push({
-                id: Date.now() + 4,
-                rmaNo: '', 
-                defectiveSn: 'TU8SA79091',
-                productID: 'ACX710', 
-                productDesc: '',
-                replacementSn: 'TU8SB93253',
-                trackingNumber: '',
-                notes: 'TCC74523000-ACX710-01\n磁區異常 換下'
-            });
-
-
             renderRmaItems(); 
         }
     </script>
