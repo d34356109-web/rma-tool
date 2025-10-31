@@ -65,6 +65,20 @@
             overflow-x: auto;
             border-radius: 6px;
         }
+        /* 寄件表格專用樣式 */
+        @media print {
+            .shipping-form { page-break-after: always; }
+        }
+        .shipping-form {
+            background-color: #ffffff;
+            border: 2px solid #ccc;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+        .shipping-form h4 {
+            border-bottom: 2px solid #3b82f6;
+        }
     </style>
 </head>
 <body class="bg-gray-50 p-4 sm:p-8 font-sans">
@@ -166,6 +180,28 @@
                 <pre id="plaintextTableOutput" class="plaintext-output">
 請新增 RMA 記錄以生成表格。
                 </pre>
+            </div>
+            
+            <!-- Output Section C (Shipping Forms) -->
+            <div class="mb-8 p-4 border rounded-lg bg-white shadow-md">
+                <h3 class="text-xl font-semibold text-gray-700 mb-4 flex justify-between items-center">
+                    C. 寄件用表格 (列印 / Word 匯出用)
+                    <div class="flex gap-2">
+                        <button onclick="printShippingForms()" id="printShippingBtn"
+                            class="flex items-center px-4 py-2 bg-yellow-600 text-white text-sm font-medium rounded-lg hover:bg-yellow-700 transition duration-150 shadow-md">
+                            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m0 0v-4m0 4h2m4 0h2m4 0h2m-4 0v-4m-4 4h2m4 0h2m-4 0v-4"></path></svg>
+                            列印所有表格
+                        </button>
+                        <button onclick="copyShippingForms()" id="copyShippingBtn"
+                            class="flex items-center px-4 py-2 bg-orange-600 text-white text-sm font-medium rounded-lg hover:bg-orange-700 transition duration-150 shadow-md">
+                            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2v-2m-6-13l-4 4m0 0l4 4m-4-4h12"></path></svg>
+                            複製所有表格 (Word)
+                        </button>
+                    </div>
+                </h3>
+                <div id="shippingFormsOutput" class="overflow-x-auto">
+                    <p class="text-gray-500 italic">請新增 RMA 記錄以生成寄件表格。</p>
+                </div>
             </div>
 
         </div>
@@ -727,7 +763,7 @@ TCC84056000-ACX710-01 (Reference ID)
             }
         }
 
-        // --- 渲染與輸出邏輯 (保持不變) ---
+        // --- 渲染與輸出邏輯 (包含 C. 區塊) ---
 
         function renderRmaItems() {
             const container = document.getElementById('rmaListContainer');
@@ -815,9 +851,11 @@ TCC84056000-ACX710-01 (Reference ID)
             document.getElementById('itemCount').textContent = rmaItems.length;
             
             const { htmlTable, plaintextTable } = generateTables(rmaItems);
+            const shippingForms = generateShippingForms(rmaItems);
 
             document.getElementById('htmlTableOutput').innerHTML = htmlTable;
             document.getElementById('plaintextTableOutput').textContent = plaintextTable;
+            document.getElementById('shippingFormsOutput').innerHTML = shippingForms;
         }
 
         function generateTables(items) {
@@ -890,6 +928,107 @@ TCC84056000-ACX710-01 (Reference ID)
             
             return { htmlTable: htmlTable.trim(), plaintextTable: plaintextOutput.trim() };
         }
+        
+        // C. 寄件表格生成函數
+        function generateShippingForms(items) {
+            if (items.length === 0) {
+                return '<p class="text-gray-500 italic">無 RMA 記錄可生成寄件表格。</p>';
+            }
+
+            let allFormsHtml = '';
+
+            items.forEach((item, index) => {
+                const itemHtml = `
+                    <div class="shipping-form p-6 border border-gray-400 rounded-lg mb-8 bg-white shadow-lg" style="page-break-after: always; width: 100%; max-width: 800px; margin: 20px auto;">
+                        <h4 class="text-xl font-bold mb-4 border-b pb-2 text-indigo-700">RMA 寄件明細 (${index + 1}/${items.length})</h4>
+                        
+                        <div class="space-y-3 text-lg">
+                            <p><strong>RMA Number:</strong> <span class="text-red-600 font-extrabold">${item.rmaNo || '【待填寫】'}</span></p>
+                            <p><strong>設備型號 (Product ID):</strong> <span>${item.productID || 'N/A'}</span></p>
+                            <p><strong>故障序號 (Defective SN):</strong> <span>${item.defectiveSn || 'N/A'}</span></p>
+                            <p><strong>換上序號 (Replacement SN):</strong> <span class="text-green-600 font-extrabold">${item.replacementSn || '【待填寫】'}</span></p>
+                            <p><strong>貨運單號 (Tracking Number):</strong> <span class="text-blue-600 font-extrabold">${item.trackingNumber || '【待填寫】'}</span></p>
+                            
+                            <div class="pt-3 mt-3 border-t border-gray-200">
+                                <p class="font-bold text-gray-700 mb-1">備註/問題描述 (Notes):</p>
+                                <div class="p-3 bg-gray-50 border rounded-md whitespace-pre-wrap text-sm">${item.notes || '無'}</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                allFormsHtml += itemHtml;
+            });
+
+            return allFormsHtml;
+        }
+        
+        // 列印所有寄件表格
+        window.printShippingForms = function() {
+            const content = document.getElementById('shippingFormsOutput').innerHTML;
+            
+            if (rmaItems.length === 0) {
+                showCopyMessage('無 RMA 記錄可列印！', 'bg-red-600');
+                return;
+            }
+
+            // 創建一個臨時視窗來包含內容並觸發列印
+            const printWindow = window.open('', '', 'height=600,width=800');
+            printWindow.document.write('<html><head><title>RMA 寄件表格列印</title>');
+            
+            // 引入列印專用樣式
+            printWindow.document.write(`
+                <style>
+                    body { font-family: 'Inter', 'Microsoft JhengHei', sans-serif; margin: 0; padding: 0; background-color: white; }
+                    /* 強制每一筆記錄列印在新的一頁 */
+                    @media print {
+                        .shipping-form { page-break-after: always; }
+                    }
+                    .shipping-form {
+                        padding: 20px;
+                        border: 1px solid #ccc;
+                        margin: 20px auto;
+                        width: 100%;
+                        max-width: 800px;
+                    }
+                    .shipping-form h4 {
+                        border-bottom: 2px solid #3b82f6;
+                        padding-bottom: 8px;
+                        margin-bottom: 15px;
+                        font-size: 1.2rem;
+                        color: #1f2937;
+                    }
+                    .shipping-form strong { font-weight: bold; }
+                    .shipping-form span { font-weight: normal; }
+                    .shipping-form .notes { white-space: pre-wrap; background: #f8f8f8; padding: 10px; border-radius: 4px; border: 1px solid #eee; }
+                </style>
+            `);
+            
+            printWindow.document.write('</head><body>');
+            printWindow.document.write(content);
+            printWindow.document.write('</body></html>');
+            printWindow.document.close();
+            
+            // 等待內容載入後列印
+            printWindow.onload = function() {
+                printWindow.print();
+                printWindow.close();
+            }
+            showCopyMessage('正在準備列印...', 'bg-yellow-600', 'printShippingBtn');
+        }
+
+        // 複製寄件表格 HTML 給 Word/Email
+        window.copyShippingForms = function() {
+            const outputElement = document.getElementById('shippingFormsOutput');
+            
+            if (rmaItems.length === 0) {
+                showCopyMessage('無內容可複製！請新增 RMA 記錄。', 'bg-red-600');
+                return;
+            }
+            
+            // 複製完整的 HTML 內容，以便貼到 Word 或郵件客戶端
+            fallbackCopy(outputElement.innerHTML, 'html', 'copyShippingBtn');
+        }
+
         
         // --- 剪貼簿邏輯 (保持不變) ---
 
