@@ -69,9 +69,21 @@
 </head>
 <body class="bg-gray-50 p-4 sm:p-8 font-sans">
     <div id="app" class="container bg-white shadow-2xl rounded-xl p-6 md:p-10">
-
+        
         <h1 class="text-3xl font-bold text-gray-800 mb-2">RMA 換貨/維修表格生成工具</h1>
-        <p class="text-gray-600 mb-8">管理多筆 RMA 記錄，並生成郵件 (HTML) 及 Excel (純文字) 表格。</p>
+        <p class="text-gray-600 mb-4">管理多筆 RMA 記錄，並生成郵件 (HTML) 及 Excel (純文字) 表格。</p>
+
+        <!-- Firebase 狀態顯示 -->
+        <div id="authStatus" class="mb-6 p-3 bg-indigo-50 border border-indigo-200 rounded-lg text-sm text-indigo-700 flex items-center justify-between">
+            <span id="loadingMessage">
+                <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-indigo-500 inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                正在載入服務...
+            </span>
+            <span id="userInfo" class="font-semibold hidden"></span>
+        </div>
 
         <!-- 輸入控制區塊 -->
         <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 p-4 rounded-lg bg-yellow-50 border border-yellow-200 gap-4">
@@ -94,6 +106,24 @@
                 </button>
             </div>
         </div>
+
+        <!-- 資料儲存與歷史記錄控制 -->
+        <div id="dataControl" class="flex flex-col sm:flex-row justify-between items-center mb-8 p-4 rounded-lg bg-gray-100 border border-gray-300 gap-4 hidden">
+            <button onclick="showHistoryModal()" id="loadBtn"
+                class="flex items-center justify-center px-4 py-2 bg-gray-600 text-white text-sm font-medium rounded-lg hover:bg-gray-700 transition duration-150 shadow-md whitespace-nowrap">
+                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m15.356 2H20M4 12v5h.582m15.356 2A8.001 8.001 0 004.582 9m15.356 2H20"></path></svg>
+                載入歷史 RMA 批次
+            </button>
+            <div class="flex gap-2 items-center w-full sm:w-auto">
+                <input type="text" id="batchNameInput" placeholder="輸入批次名稱 (例如: 10月31日批次)" class="p-2 border rounded-lg flex-grow">
+                <button onclick="saveCurrentBatch()" id="saveBtn"
+                    class="flex items-center justify-center px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 transition duration-150 shadow-md whitespace-nowrap">
+                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-3 0V4a2 2 0 00-2-2H9a2 2 0 00-2 2v3m7 0h-3"></path></svg>
+                    儲存當前批次
+                </button>
+            </div>
+        </div>
+
 
         <!-- RMA 列表輸入區 -->
         <div id="rmaListContainer" class="mb-10 overflow-x-auto shadow-lg rounded-lg border">
@@ -162,7 +192,7 @@ Defective Product ID: ACX710DC
             </div>
         </div>
 
-        <!-- 貼上換貨資訊 Modal (NEW) -->
+        <!-- 貼上換貨資訊 Modal -->
         <div id="exchangeModal" class="fixed inset-0 bg-gray-900 bg-opacity-75 hidden items-center justify-center p-4 z-50">
             <div class="bg-white rounded-xl shadow-2xl p-6 w-full max-w-lg">
                 <h3 class="text-2xl font-bold mb-4 text-pink-700">貼上換貨資訊 (新舊序號/備註)</h3>
@@ -185,6 +215,21 @@ TCC84056000-ACX710-01 (Reference ID)
                 </div>
             </div>
         </div>
+        
+        <!-- 歷史記錄 Modal -->
+        <div id="historyModal" class="fixed inset-0 bg-gray-900 bg-opacity-75 hidden items-center justify-center p-4 z-50">
+            <div class="bg-white rounded-xl shadow-2xl p-6 w-full max-w-2xl max-h-[80vh] overflow-y-auto">
+                <h3 class="text-2xl font-bold mb-4 text-gray-700">歷史 RMA 批次記錄</h3>
+                <div id="historyList" class="space-y-3">
+                    <p class="text-gray-500 italic">正在載入歷史記錄...</p>
+                </div>
+                <div class="flex justify-end gap-3 mt-6">
+                    <button onclick="hideHistoryModal()" class="px-4 py-2 bg-gray-300 rounded-lg hover:bg-gray-400 transition">
+                        關閉
+                    </button>
+                </div>
+            </div>
+        </div>
 
         <!-- 複製成功提示 -->
         <div id="copiedMsg" class="copied-message fixed bottom-4 right-4 bg-gray-800 text-white px-5 py-3 rounded-xl shadow-2xl">
@@ -193,33 +238,230 @@ TCC84056000-ACX710-01 (Reference ID)
 
     </div>
 
-    <script>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, deleteDoc, doc, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
         // 全局狀態：儲存所有 RMA 記錄的陣列
         let rmaItems = [];
+        let db, auth;
+        let userId = 'anonymous'; 
+        let isAuthReady = false;
+        
+        // Firestore 集合路徑
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const FIRESTORE_COLLECTION_PATH = `/artifacts/${appId}/public/data/rma_batches`;
+        
+        // 錯誤日誌
+        setLogLevel('debug');
+
+        // --- Firebase 初始化與認證 ---
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+
+        if (Object.keys(firebaseConfig).length > 0) {
+            const app = initializeApp(firebaseConfig);
+            db = getFirestore(app);
+            auth = getAuth(app);
+
+            const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+            onAuthStateChanged(auth, async (user) => {
+                const loadingMsg = document.getElementById('loadingMessage');
+                const userInfo = document.getElementById('userInfo');
+                const dataControl = document.getElementById('dataControl');
+
+                if (user) {
+                    userId = user.uid;
+                    isAuthReady = true;
+                    loadingMsg.textContent = '服務已載入。';
+                    userInfo.textContent = `使用者 ID: ${userId}`;
+                    userInfo.classList.remove('hidden');
+                    dataControl.classList.remove('hidden');
+                    console.log("Firebase initialized and user authenticated:", userId);
+                    loadHistoryListener(); // 監聽歷史記錄
+                } else {
+                    // 如果沒有用戶，嘗試使用提供的 token 登入，否則匿名登入
+                    try {
+                        if (initialAuthToken) {
+                            await signInWithCustomToken(auth, initialAuthToken);
+                        } else {
+                            await signInAnonymously(auth);
+                        }
+                    } catch (error) {
+                        console.error("Authentication failed:", error);
+                        loadingMsg.textContent = '認證失敗，功能受限。';
+                        loadingMsg.classList.add('text-red-700');
+                        isAuthReady = true;
+                        dataControl.classList.add('hidden'); // 隱藏儲存功能
+                    }
+                }
+            });
+        } else {
+            console.error("Firebase config is missing.");
+            document.getElementById('loadingMessage').textContent = 'Firebase 配置遺失，資料儲存功能無法使用。';
+            isAuthReady = true; // 允許應用程式的其他部分運行
+        }
+        
+        // --- 資料庫操作功能 ---
+
+        // 儲存當前的 RMA 批次到 Firestore
+        window.saveCurrentBatch = async function() {
+            if (!isAuthReady || rmaItems.length === 0) {
+                alert('請先登入或新增 RMA 記錄才能儲存。');
+                return;
+            }
+
+            const batchNameInput = document.getElementById('batchNameInput');
+            let batchName = batchNameInput.value.trim() || `RMA 批次 - ${new Date().toLocaleString('zh-TW', { dateStyle: 'short', timeStyle: 'short' })}`;
+
+            if (!batchName) return;
+
+            try {
+                const docRef = await addDoc(collection(db, FIRESTORE_COLLECTION_PATH), {
+                    userId: userId,
+                    name: batchName,
+                    timestamp: Date.now(),
+                    // 將整個 RMA 陣列序列化為 JSON 字串以便安全儲存
+                    records: JSON.stringify(rmaItems), 
+                });
+                showCopyMessage(`批次 "${batchName}" (ID: ${docRef.id.substring(0, 4)}...) 儲存成功！`, 'bg-green-600', 'saveBtn');
+                batchNameInput.value = ''; // 清空名稱輸入框
+            } catch (e) {
+                console.error("Error adding document: ", e);
+                showCopyMessage("儲存失敗：請檢查網路或權限。", 'bg-red-600', 'saveBtn');
+            }
+        }
+
+        // 監聽歷史記錄
+        function loadHistoryListener() {
+            if (!isAuthReady) return;
+
+            const q = query(collection(db, FIRESTORE_COLLECTION_PATH), orderBy("timestamp", "desc"));
+            
+            onSnapshot(q, (snapshot) => {
+                const historyList = document.getElementById('historyList');
+                historyList.innerHTML = '';
+                
+                if (snapshot.empty) {
+                    historyList.innerHTML = '<p class="text-gray-500 italic">目前沒有歷史批次記錄。</p>';
+                    return;
+                }
+
+                snapshot.docs.forEach(doc => {
+                    const data = doc.data();
+                    const date = new Date(data.timestamp).toLocaleString('zh-TW', { dateStyle: 'medium', timeStyle: 'short' });
+                    const recordCount = JSON.parse(data.records).length;
+
+                    const itemHtml = `
+                        <div class="flex justify-between items-center p-3 border rounded-lg bg-white shadow-sm hover:bg-gray-50">
+                            <div>
+                                <p class="font-semibold text-gray-800">${data.name} (<span class="text-xs text-gray-500">${recordCount} 筆記錄</span>)</p>
+                                <p class="text-xs text-gray-500">儲存者: ${data.userId.substring(0, 8)}... | 時間: ${date}</p>
+                            </div>
+                            <div class="flex gap-2">
+                                <button onclick="loadBatch('${doc.id}')" class="px-3 py-1 bg-indigo-500 text-white text-sm rounded-lg hover:bg-indigo-600 transition">
+                                    載入
+                                </button>
+                                <button onclick="deleteBatch('${doc.id}', '${data.userId}')" class="px-3 py-1 bg-red-500 text-white text-sm rounded-lg hover:bg-red-600 transition">
+                                    刪除
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                    historyList.innerHTML += itemHtml;
+                });
+            }, (error) => {
+                console.error("Error listening to history:", error);
+                document.getElementById('historyList').innerHTML = '<p class="text-red-500 italic">載入歷史記錄失敗。</p>';
+            });
+        }
+
+        // 載入指定的批次記錄到當前編輯器
+        window.loadBatch = function(docId) {
+            const historyList = document.getElementById('historyList');
+            const targetDoc = historyList.querySelector(`[onclick="loadBatch('${docId}')"]`).closest('div').querySelector('.font-semibold').textContent;
+
+            const confirmLoad = confirm(`確定要載入批次 "${targetDoc.split('(')[0].trim()}" 嗎？這將覆蓋當前編輯中的資料！`);
+            if (!confirmLoad) return;
+
+            // 由於 onSnapshot 已經在上面監聽，我們只需要從 Firestore 抓取或解析即可
+            const q = query(collection(db, FIRESTORE_COLLECTION_PATH));
+            
+            // 由於 onSnapshot 是異步的，這裡快速重新跑一次快照，但更好的做法是直接讀取 doc
+            // 為了簡化，我們假設資料已經在 historyList 中了，但實際上我們應該從快照中找
+            
+            // 這裡使用一個臨時快照讀取，確保我們拿到最新的資料
+            const unsubscribe = onSnapshot(doc(db, FIRESTORE_COLLECTION_PATH, docId), (docSnapshot) => {
+                if (docSnapshot.exists()) {
+                    const data = docSnapshot.data();
+                    try {
+                        const records = JSON.parse(data.records);
+                        // 賦值並刷新 UI
+                        rmaItems = records; 
+                        renderRmaItems();
+                        hideHistoryModal();
+                        showCopyMessage(`批次 "${data.name}" 載入成功！`, 'bg-indigo-600');
+                    } catch (e) {
+                        console.error("Error parsing records:", e);
+                        showCopyMessage('載入失敗：資料格式錯誤。', 'bg-red-600');
+                    }
+                } else {
+                    showCopyMessage('載入失敗：批次不存在。', 'bg-red-600');
+                }
+                // 停止這個臨時監聽器
+                unsubscribe(); 
+            });
+        }
+        
+        // 刪除指定的批次記錄
+        window.deleteBatch = async function(docId, ownerId) {
+            if (userId !== ownerId) {
+                alert('您只能刪除您自己儲存的批次記錄。');
+                return;
+            }
+
+            const confirmDelete = confirm('確定要永久刪除這筆歷史記錄嗎？');
+            if (!confirmDelete) return;
+
+            try {
+                await deleteDoc(doc(db, FIRESTORE_COLLECTION_PATH, docId));
+                showCopyMessage('批次記錄已刪除。', 'bg-red-600');
+            } catch (e) {
+                console.error("Error deleting document: ", e);
+                showCopyMessage("刪除失敗：請檢查網路或權限。", 'bg-red-600');
+            }
+        }
 
         // --- MODAL 顯示/隱藏函數 ---
-        function showPasteModal() {
+        window.showPasteModal = function() {
             document.getElementById('pasteModal').style.display = 'flex';
             document.getElementById('modalRmaInput').value = ''; 
         }
 
-        function hidePasteModal() {
+        window.hidePasteModal = function() {
             document.getElementById('pasteModal').style.display = 'none';
         }
 
-        function showExchangeModal() {
+        window.showExchangeModal = function() {
             document.getElementById('exchangeModal').style.display = 'flex';
             document.getElementById('modalExchangeInput').value = ''; 
         }
 
-        function hideExchangeModal() {
+        window.hideExchangeModal = function() {
             document.getElementById('exchangeModal').style.display = 'none';
+        }
+        
+        window.showHistoryModal = function() {
+            document.getElementById('historyModal').style.display = 'flex';
+        }
+
+        window.hideHistoryModal = function() {
+            document.getElementById('historyModal').style.display = 'none';
         }
 
 
         // --- 資料解析邏輯 ---
-
-        // 1. 解析標準 RMA 文本 (RMA Number, Defective SN, Product ID...)
         function parseRmaText(input) {
             const data = {};
             if (!input) return data;
@@ -241,14 +483,10 @@ TCC84056000-ACX710-01 (Reference ID)
             return data;
         }
 
-        // 2. 解析換貨資訊文本 (舊序號, 新序號, 備註)
         function parseExchangeText(input) {
-            // 初始化 data，確保即使某些欄位未解析到，它們也存在
             const data = { productID: '', notes: '' }; 
             if (!input) return data;
 
-            // 1. 捕獲序號
-            // 強化正規表達式以支援多種寫法：舊序號: / 舊序號: / old: / old :
             const defectiveSnMatch = input.match(/(舊序號|old)\s*[:：]\s*(.*)/i);
             const replacementSnMatch = input.match(/(新序號|new)\s*[:：]\s*(.*)/i);
             const snRegex = /(舊序號|old|新序號|new)\s*[:：]/i;
@@ -257,30 +495,24 @@ TCC84056000-ACX710-01 (Reference ID)
             data.replacementSn = replacementSnMatch ? replacementSnMatch[2].trim() : '';
 
             let notes = [];
-            // 分割輸入並去除空白行
             const lines = input.split('\n').map(line => line.trim()).filter(line => line.length > 0);
 
             let isFirstLine = true;
             lines.forEach(line => {
-                // 排除明確的 SN 定義行 (如 old: xxx, 新序號: yyy)
                 if (line.match(snRegex)) {
                     return; 
                 }
                 
-                // 處理第一行非 SN 定義行 (通常是 Reference ID)
                 if (isFirstLine) {
-                    // 從 Reference ID 嘗試提取產品 ID (例如 TCC84056000-ACX710-01 -> ACX710)
                     const productMatch = line.match(/-(.+?)-\d{2}$/);
                     data.productID = productMatch ? productMatch[1].trim() : '';
                 }
 
-                // 將所有非 SN 定義的行都視為備註的一部分 (包括 Reference ID 和隨後的備註文字)
                 notes.push(line);
                 
                 isFirstLine = false; 
             });
             
-            // 合併所有非 SN 定義的行作為最終備註
             data.notes = notes.join('\n').trim();
             
             return data;
@@ -288,8 +520,7 @@ TCC84056000-ACX710-01 (Reference ID)
 
         // --- 資料處理與新增/合併 ---
 
-        // 從 Modal 貼上文本並新增/合併一筆記錄
-        function extractAndAddItem(type) {
+        window.extractAndAddItem = function(type) {
             let input, parsedData;
 
             if (type === 'standard') {
@@ -307,18 +538,11 @@ TCC84056000-ACX710-01 (Reference ID)
             if (parsedData.rmaNo || parsedData.defectiveSn || parsedData.replacementSn) {
                 let isMerged = false;
                 
-                // 1. 檢查是否要合併到最後一筆紀錄
                 if (rmaItems.length > 0) {
                     const lastItem = rmaItems[rmaItems.length - 1];
-                    
-                    // 判斷是否為空白佔位符 (通常是手動AddItem()的結果)
                     const isLastItemBlank = !lastItem.rmaNo && !lastItem.defectiveSn && !lastItem.replacementSn;
                     
-                    // 【合併邏輯】
-                    // A) 貼入的是『換貨資訊』(Exchange)，目的是為了補齊 RMA 序號和備註
-                    // B) 最後一筆紀錄是空白佔位符 (用來填入第一筆資料，不論 Standard 或 Exchange)
                     if (type === 'exchange' || isLastItemBlank) {
-                        // 合併數據到最後一筆記錄 (只填補空白欄位，新貼的資料優先)
                         lastItem.rmaNo = lastItem.rmaNo || parsedData.rmaNo || '';
                         lastItem.defectiveSn = lastItem.defectiveSn || parsedData.defectiveSn || '';
                         lastItem.replacementSn = lastItem.replacementSn || parsedData.replacementSn || '';
@@ -328,11 +552,9 @@ TCC84056000-ACX710-01 (Reference ID)
 
                         isMerged = true;
                     }
-                    // 如果是 Standard Paste 且最後一筆記錄已有部分數據 (非空白)，則不執行合併，讓程式流到下面新增一筆紀錄
                 }
 
                 if (!isMerged) {
-                    // 2. 如果沒有合併，則新增一筆新紀錄
                     const newItem = {
                         id: Date.now() + Math.random(), 
                         rmaNo: parsedData.rmaNo || '',
@@ -352,8 +574,7 @@ TCC84056000-ACX710-01 (Reference ID)
             }
         }
 
-        // 新增一筆空白記錄
-        function addItem() {
+        window.addItem = function() {
             const newItem = {
                 id: Date.now() + Math.random(), 
                 rmaNo: '',
@@ -368,37 +589,34 @@ TCC84056000-ACX710-01 (Reference ID)
             renderRmaItems();
         }
 
-        // 刪除指定索引的記錄
-        function deleteItem(index) {
+        window.deleteItem = function(index) {
             rmaItems.splice(index, 1);
             renderRmaItems();
         }
 
-        // 上移指定索引的記錄
-        function moveItemUp(index) {
+        window.moveItemUp = function(index) {
             if (index > 0) {
                 [rmaItems[index], rmaItems[index - 1]] = [rmaItems[index - 1], rmaItems[index]];
                 renderRmaItems();
             }
         }
 
-        // 下移指定索引的記錄
-        function moveItemDown(index) {
+        window.moveItemDown = function(index) {
             if (index < rmaItems.length - 1) {
                 [rmaItems[index], rmaItems[index + 1]] = [rmaItems[index + 1], rmaItems[index]];
                 renderRmaItems();
             }
         }
 
-        // 處理動態輸入欄位的值變更
-        function handleInputChange(index, field, value) {
+        window.handleInputChange = function(index, field, value) {
             if (rmaItems[index]) {
                 rmaItems[index][field] = value;
                 updateOutput();
             }
         }
 
-        // 渲染 RMA 項目列表
+        // --- 渲染與輸出邏輯 ---
+
         function renderRmaItems() {
             const container = document.getElementById('rmaListContainer');
             
@@ -426,7 +644,6 @@ TCC84056000-ACX710-01 (Reference ID)
             `;
 
             rmaItems.forEach((item, index) => {
-                // 產品描述作為備註輸入框的 Placeholder
                 const placeholderNotes = item.productDesc || '手動輸入備註...';
 
                 html += `
@@ -482,7 +699,6 @@ TCC84056000-ACX710-01 (Reference ID)
             updateOutput();
         }
 
-        // 更新輸出 (HTML 及 純文字表格)
         function updateOutput() {
             document.getElementById('itemCount').textContent = rmaItems.length;
             
@@ -492,23 +708,19 @@ TCC84056000-ACX710-01 (Reference ID)
             document.getElementById('plaintextTableOutput').textContent = plaintextTable;
         }
 
-        // 生成所有格式的表格
         function generateTables(items) {
             if (items.length === 0) {
                 const emptyMsg = '<p class="text-gray-500 italic">無 RMA 記錄可生成表格。</p>';
                 return { htmlTable: emptyMsg, plaintextTable: '無 RMA 記錄可生成表格' };
             }
 
-            // --- 1. HTML Table Generation ( for Email ) ---
-            // 確保所有樣式都以 inline CSS 呈現，以最大化郵件軟體的相容性。
             let bodyHtml = '';
             const thStyle = "border: 1px solid #e5e7eb; padding: 10px 12px; text-align: left; background-color: #f3f4f6; font-weight: 600;";
             const tdStyle = "border: 1px solid #e5e7eb; padding: 10px 12px; text-align: left;";
-            const tdSnStyle = "border: 1px solid #e5e7eb; padding: 10px 12px; text-align: left; font-weight: bold; color: #10B981;"; // 綠色
-            const tdTrackStyle = "border: 1px solid #e5e7eb; padding: 10px 12px; text-align: left; font-weight: bold; color: #3B82F6;"; // 藍色
+            const tdSnStyle = "border: 1px solid #e5e7eb; padding: 10px 12px; text-align: left; font-weight: bold; color: #10B981;"; 
+            const tdTrackStyle = "border: 1px solid #e5e7eb; padding: 10px 12px; text-align: left; font-weight: bold; color: #3B82F6;"; 
 
             items.forEach(item => {
-                // 備註只顯示使用者輸入的 notes 欄位
                 let displayNotes = item.notes.trim() || 'N/A';
 
                 bodyHtml += `
@@ -543,14 +755,12 @@ TCC84056000-ACX710-01 (Reference ID)
                 </table>
             `;
 
-            // --- 2. Plaintext Table Generation ( for Excel/Clipboard ) ---
-            
             const plaintextHeader = [
                 "RMA", "設備型號 (Product ID)", "換上序號 (Replacement SN)", 
                 "換下序號 (Defective SN)", "備註 (Notes)", "貨運單號 (Tracking)"
             ];
             
-            let plaintextOutput = plaintextHeader.join('\t') + '\n'; // Tab-separated header
+            let plaintextOutput = plaintextHeader.join('\t') + '\n'; 
 
             items.forEach(item => {
                 const displayNotes = item.notes.trim();
@@ -563,13 +773,14 @@ TCC84056000-ACX710-01 (Reference ID)
                     displayNotes,
                     item.trackingNumber || '',
                 ];
-                plaintextOutput += row.join('\t') + '\n'; // Tab-separated rows
+                plaintextOutput += row.join('\t') + '\n';
             });
             
             return { htmlTable: htmlTable.trim(), plaintextTable: plaintextOutput.trim() };
         }
         
-        // 顯示複製成功或失敗的訊息
+        // --- 剪貼簿邏輯 ---
+
         function showCopyMessage(msg, bgColor, buttonId) {
             const copiedMsg = document.getElementById('copiedMsg');
             copiedMsg.textContent = msg;
@@ -591,8 +802,7 @@ TCC84056000-ACX710-01 (Reference ID)
             }, 2000);
         }
 
-        // 複製內容到剪貼簿 (根據類型選擇 HTML 或純文字)
-        function copyTableContent(type) {
+        window.copyTableContent = function(type) {
             const outputElement = type === 'html' ? 
                 document.getElementById('htmlTableOutput').querySelector('table') :
                 document.getElementById('plaintextTableOutput');
@@ -606,22 +816,17 @@ TCC84056000-ACX710-01 (Reference ID)
 
             const contentToCopy = type === 'html' ? outputElement.outerHTML : outputElement.textContent;
 
-            // 由於環境限制，直接使用 document.execCommand('copy') 備用方法
             fallbackCopy(contentToCopy, type, buttonId);
         }
         
-        // 舊版瀏覽器或 iFrame 環境下的複製 fallback
         function fallbackCopy(content, type, buttonId) {
             let tempEl;
             
             if (type === 'html') {
-                // For HTML (Rich Text), use a div and selection API to copy the structured content
                 tempEl = document.createElement('div');
                 tempEl.innerHTML = content;
-                // 必須將元素添加到 DOM 中才能被選取和複製
                 document.body.appendChild(tempEl);
 
-                // 選取元素內的全部內容
                 const selection = window.getSelection();
                 const range = document.createRange();
                 range.selectNodeContents(tempEl);
@@ -629,22 +834,18 @@ TCC84056000-ACX710-01 (Reference ID)
                 selection.addRange(range);
                 
             } else {
-                // For plaintext (Excel), use a textarea
                 tempEl = document.createElement('textarea');
                 tempEl.value = content;
                 document.body.appendChild(tempEl);
-                tempEl.select(); // Select for textarea
+                tempEl.select();
             }
             
-            // 將臨時元素移到視窗外，避免對使用者造成干擾
             tempEl.style.position = 'absolute';
             tempEl.style.left = '-9999px';
 
             try {
-                // 使用 document.execCommand('copy')
                 const successful = document.execCommand('copy');
 
-                // 清除 HTML 複製時建立的選取範圍
                 if (type === 'html') {
                     window.getSelection().removeAllRanges();
                 }
@@ -663,8 +864,6 @@ TCC84056000-ACX710-01 (Reference ID)
 
         // 頁面載入時執行一次初始化
         window.onload = function() {
-            // 預設不載入任何範例資料，從空白開始
-            
             renderRmaItems(); 
         }
     </script>
