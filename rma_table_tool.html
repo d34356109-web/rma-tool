@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RMA 表格生成工具 (網頁版)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'Microsoft JhengHei', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+    <style>
+        /* 自定義 Tailwind 樣式 */
+        .container {
+            max-width: 1400px;
+            margin: auto;
+        }
+        .copied-message {
+            transition: opacity 0.3s ease-in-out;
+            opacity: 0;
+            z-index: 1000;
+        }
+        .copied-message.show {
+            opacity: 1;
+        }
+        /* 確保輸出表格的樣式能被郵件軟體識別 */
+        .table-output table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9rem;
+        }
+        .table-output th, .table-output td {
+            border: 1px solid #e5e7eb;
+            padding: 10px 12px;
+            text-align: left;
+        }
+        .table-output th {
+            background-color: #f3f4f6;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+        /* 輸入表格的樣式 */
+        .input-table td {
+            padding: 8px 10px;
+        }
+        .input-table input {
+            width: 100%;
+            padding: 6px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        .plaintext-output {
+            white-space: pre;
+            font-family: monospace;
+            padding: 1rem;
+            background-color: #f8f8f8;
+            border: 1px solid #ddd;
+            overflow-x: auto;
+            border-radius: 6px;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 p-4 sm:p-8 font-sans">
+    <div id="app" class="container bg-white shadow-2xl rounded-xl p-6 md:p-10">
+
+        <h1 class="text-3xl font-bold text-gray-800 mb-2">RMA 換貨/維修表格生成工具</h1>
+        <p class="text-gray-600 mb-8">管理多筆 RMA 記錄，並生成郵件 (HTML) 及 Excel (純文字) 表格。</p>
+
+        <!-- 輸入控制區塊 -->
+        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 p-4 rounded-lg bg-yellow-50 border border-yellow-200 gap-4">
+            <h2 class="text-xl font-semibold text-gray-700">① 管理 RMA 記錄</h2>
+            <div class="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+                <button onclick="showPasteModal()" 
+                    class="flex items-center justify-center px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition duration-150 shadow-md whitespace-nowrap">
+                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 13h6m-3-3v6m-9 1 12 12-12-12z"></path></svg>
+                    貼上標準 RMA 文本
+                </button>
+                <button onclick="showExchangeModal()" 
+                    class="flex items-center justify-center px-4 py-2 bg-pink-600 text-white text-sm font-medium rounded-lg hover:bg-pink-700 transition duration-150 shadow-md whitespace-nowrap">
+                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                    貼上換貨資訊 (新舊序號/備註)
+                </button>
+                <button onclick="addItem()" 
+                    class="flex items-center justify-center px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition duration-150 shadow-md whitespace-nowrap">
+                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                    新增一筆空白資料
+                </button>
+            </div>
+        </div>
+
+        <!-- RMA 列表輸入區 -->
+        <div id="rmaListContainer" class="mb-10 overflow-x-auto shadow-lg rounded-lg border">
+            <!-- Dynamic RMA items will be rendered here -->
+            <div class="p-6 text-center text-gray-500 italic" id="emptyListMessage">
+                目前沒有 RMA 記錄，請點擊上方按鈕新增資料。
+            </div>
+        </div>
+
+
+        <!-- 輸出區塊 -->
+        <div id="outputSection" class="border-t pt-8">
+            <h2 class="text-2xl font-bold text-gray-800 mb-6">② 生成結果 (<span id="itemCount">0</span> 筆記錄)</h2>
+
+            <!-- HTML Table 輸出 (用於郵件) -->
+            <div class="mb-8 p-4 border rounded-lg bg-white shadow-md">
+                <h3 class="text-xl font-semibold text-gray-700 mb-4 flex justify-between items-center">
+                    A. HTML 表格 (用於郵件)
+                    <button onclick="copyTableContent('html')" id="copyHtmlBtn"
+                        class="flex items-center px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition duration-150 shadow-md">
+                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2v-2m-6-13l-4 4m0 0l4 4m-4-4h12"></path></svg>
+                        複製 HTML 表格
+                    </button>
+                </h3>
+                <div id="htmlTableOutput" class="overflow-x-auto table-output">
+                    <p class="text-gray-500 italic">請新增 RMA 記錄以生成表格。</p>
+                </div>
+            </div>
+
+            <!-- Plaintext Table 輸出 (用於 Excel 貼上) -->
+            <div class="mb-8 p-4 border rounded-lg bg-white shadow-md">
+                <h3 class="text-xl font-semibold text-gray-700 mb-4 flex justify-between items-center">
+                    B. 純文字表格 (用於 Excel/試算表貼上)
+                    <button onclick="copyTableContent('plaintext')" id="copyPlaintextBtn"
+                        class="flex items-center px-4 py-2 bg-purple-600 text-white text-sm font-medium rounded-lg hover:bg-purple-700 transition duration-150 shadow-md">
+                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2v-2m-6-13l-4 4m0 0l4 4m-4-4h12"></path></svg>
+                        複製純文字表格
+                    </button>
+                </h3>
+                <pre id="plaintextTableOutput" class="plaintext-output">
+請新增 RMA 記錄以生成表格。
+                </pre>
+            </div>
+
+        </div>
+
+        <!-- 貼上標準 RMA 文本 Modal -->
+        <div id="pasteModal" class="fixed inset-0 bg-gray-900 bg-opacity-75 hidden items-center justify-center p-4 z-50">
+            <div class="bg-white rounded-xl shadow-2xl p-6 w-full max-w-lg">
+                <h3 class="text-2xl font-bold mb-4 text-indigo-700">貼上標準 RMA 資訊文本 (單筆)</h3>
+                <textarea id="modalRmaInput" rows="8"
+                    class="w-full p-3 border border-indigo-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 text-gray-700 placeholder-gray-400 mb-4"
+                    placeholder="例如：
+RMA Number: R200591359
+Defective Serial Number: TU8SA68128
+Defective Product ID: ACX710DC
+..."></textarea>
+                <div class="flex justify-end gap-3">
+                    <button onclick="hidePasteModal()" class="px-4 py-2 bg-gray-300 rounded-lg hover:bg-gray-400 transition">
+                        取消
+                    </button>
+                    <button onclick="extractAndAddItem('standard')" class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition">
+                        解析並新增記錄
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 貼上換貨資訊 Modal (NEW) -->
+        <div id="exchangeModal" class="fixed inset-0 bg-gray-900 bg-opacity-75 hidden items-center justify-center p-4 z-50">
+            <div class="bg-white rounded-xl shadow-2xl p-6 w-full max-w-lg">
+                <h3 class="text-2xl font-bold mb-4 text-pink-700">貼上換貨資訊 (新舊序號/備註)</h3>
+                <textarea id="modalExchangeInput" rows="8"
+                    class="w-full p-3 border border-pink-300 rounded-lg focus:ring-pink-500 focus:border-pink-500 text-gray-700 placeholder-gray-400 mb-4"
+                    placeholder="請貼上類似以下格式的內容：
+
+TCC84056000-ACX710-01 (Reference ID)
+舊序號: TU8SA79237 或 old: TU8SA79237
+新序號: TU8SB95388 或 new: TU8SB95388
+備註：TCC84056000-ACX710-01 PEM 0 Feed B Not OK
+"></textarea>
+                <div class="flex justify-end gap-3">
+                    <button onclick="hideExchangeModal()" class="px-4 py-2 bg-gray-300 rounded-lg hover:bg-gray-400 transition">
+                        取消
+                    </button>
+                    <button onclick="extractAndAddItem('exchange')" class="px-4 py-2 bg-pink-600 text-white rounded-lg hover:bg-pink-700 transition">
+                        解析並新增記錄
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 複製成功提示 -->
+        <div id="copiedMsg" class="copied-message fixed bottom-4 right-4 bg-gray-800 text-white px-5 py-3 rounded-xl shadow-2xl">
+            已成功複製到剪貼簿！
+        </div>
+
+    </div>
+
+    <script>
+        // 全局狀態：儲存所有 RMA 記錄的陣列
+        let rmaItems = [];
+
+        // --- MODAL 顯示/隱藏函數 ---
+        function showPasteModal() {
+            document.getElementById('pasteModal').style.display = 'flex';
+            document.getElementById('modalRmaInput').value = ''; 
+        }
+
+        function hidePasteModal() {
+            document.getElementById('pasteModal').style.display = 'none';
+        }
+
+        function showExchangeModal() {
+            document.getElementById('exchangeModal').style.display = 'flex';
+            document.getElementById('modalExchangeInput').value = ''; 
+        }
+
+        function hideExchangeModal() {
+            document.getElementById('exchangeModal').style.display = 'none';
+        }
+
+
+        // --- 資料解析邏輯 ---
+
+        // 1. 解析標準 RMA 文本 (RMA Number, Defective SN, Product ID...)
+        function parseRmaText(input) {
+            const data = {};
+            if (!input) return data;
+
+            const patterns = [
+                { key: 'rmaNo', regex: /RMA Number:\s*(.*)/i },
+                { key: 'defectiveSn', regex: /Defective Serial Number:\s*(.*)/i },
+                { key: 'productID', regex: /Defective Product ID:\s*(.*)/i },
+                { key: 'productDesc', regex: /Defective Product Description:\s*(.*)/i },
+            ];
+            
+            patterns.forEach(({ key, regex }) => {
+                const match = input.match(regex);
+                if (match && match[1]) {
+                    data[key] = match[1].trim();
+                }
+            });
+
+            return data;
+        }
+
+        // 2. 解析換貨資訊文本 (舊序號, 新序號, 備註)
+        function parseExchangeText(input) {
+            // 初始化 data，確保即使某些欄位未解析到，它們也存在
+            const data = { productID: '', notes: '' }; 
+            if (!input) return data;
+
+            // 1. 捕獲序號
+            // 強化正規表達式以支援多種寫法：舊序號: / 舊序號: / old: / old :
+            const defectiveSnMatch = input.match(/(舊序號|old)\s*[:：]\s*(.*)/i);
+            const replacementSnMatch = input.match(/(新序號|new)\s*[:：]\s*(.*)/i);
+            const snRegex = /(舊序號|old|新序號|new)\s*[:：]/i;
+
+            data.defectiveSn = defectiveSnMatch ? defectiveSnMatch[2].trim() : '';
+            data.replacementSn = replacementSnMatch ? replacementSnMatch[2].trim() : '';
+
+            let notes = [];
+            // 分割輸入並去除空白行
+            const lines = input.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+
+            let isFirstLine = true;
+            lines.forEach(line => {
+                // 排除明確的 SN 定義行 (如 old: xxx, 新序號: yyy)
+                if (line.match(snRegex)) {
+                    return; 
+                }
+                
+                // 處理第一行非 SN 定義行 (通常是 Reference ID)
+                if (isFirstLine) {
+                    // 從 Reference ID 嘗試提取產品 ID (例如 TCC84056000-ACX710-01 -> ACX710)
+                    const productMatch = line.match(/-(.+?)-\d{2}$/);
+                    data.productID = productMatch ? productMatch[1].trim() : '';
+                }
+
+                // 將所有非 SN 定義的行都視為備註的一部分 (包括 Reference ID 和隨後的備註文字)
+                notes.push(line);
+                
+                isFirstLine = false; 
+            });
+            
+            // 合併所有非 SN 定義的行作為最終備註
+            data.notes = notes.join('\n').trim();
+            
+            return data;
+        }
+
+        // --- 資料處理與新增/合併 ---
+
+        // 從 Modal 貼上文本並新增/合併一筆記錄
+        function extractAndAddItem(type) {
+            let input, parsedData;
+
+            if (type === 'standard') {
+                input = document.getElementById('modalRmaInput').value;
+                parsedData = parseRmaText(input);
+                hidePasteModal();
+            } else if (type === 'exchange') {
+                input = document.getElementById('modalExchangeInput').value;
+                parsedData = parseExchangeText(input);
+                hideExchangeModal();
+            } else {
+                return;
+            }
+
+            if (parsedData.rmaNo || parsedData.defectiveSn || parsedData.replacementSn) {
+                let isMerged = false;
+                
+                // 1. 檢查是否要合併到最後一筆紀錄
+                if (rmaItems.length > 0) {
+                    const lastItem = rmaItems[rmaItems.length - 1];
+                    
+                    // 判斷是否為空白佔位符 (通常是手動AddItem()的結果)
+                    const isLastItemBlank = !lastItem.rmaNo && !lastItem.defectiveSn && !lastItem.replacementSn;
+                    
+                    // 【合併邏輯】
+                    // A) 貼入的是『換貨資訊』(Exchange)，目的是為了補齊 RMA 序號和備註
+                    // B) 最後一筆紀錄是空白佔位符 (用來填入第一筆資料，不論 Standard 或 Exchange)
+                    if (type === 'exchange' || isLastItemBlank) {
+                        // 合併數據到最後一筆記錄 (只填補空白欄位，新貼的資料優先)
+                        lastItem.rmaNo = lastItem.rmaNo || parsedData.rmaNo || '';
+                        lastItem.defectiveSn = lastItem.defectiveSn || parsedData.defectiveSn || '';
+                        lastItem.replacementSn = lastItem.replacementSn || parsedData.replacementSn || '';
+                        lastItem.productID = lastItem.productID || parsedData.productID || '';
+                        lastItem.productDesc = lastItem.productDesc || parsedData.productDesc || '';
+                        lastItem.notes = lastItem.notes || parsedData.notes || ''; 
+
+                        isMerged = true;
+                    }
+                    // 如果是 Standard Paste 且最後一筆記錄已有部分數據 (非空白)，則不執行合併，讓程式流到下面新增一筆紀錄
+                }
+
+                if (!isMerged) {
+                    // 2. 如果沒有合併，則新增一筆新紀錄
+                    const newItem = {
+                        id: Date.now() + Math.random(), 
+                        rmaNo: parsedData.rmaNo || '',
+                        defectiveSn: parsedData.defectiveSn || '',
+                        replacementSn: parsedData.replacementSn || '',
+                        productID: parsedData.productID || '',
+                        productDesc: parsedData.productDesc || '',
+                        trackingNumber: '',
+                        notes: parsedData.notes || '',
+                    };
+                    rmaItems.push(newItem);
+                }
+                
+                renderRmaItems();
+            } else {
+                console.error("無法解析 RMA 資訊。");
+            }
+        }
+
+        // 新增一筆空白記錄
+        function addItem() {
+            const newItem = {
+                id: Date.now() + Math.random(), 
+                rmaNo: '',
+                defectiveSn: '',
+                productID: '',
+                productDesc: '',
+                replacementSn: '',
+                trackingNumber: '',
+                notes: ''
+            };
+            rmaItems.push(newItem);
+            renderRmaItems();
+        }
+
+        // 刪除指定索引的記錄
+        function deleteItem(index) {
+            rmaItems.splice(index, 1);
+            renderRmaItems();
+        }
+
+        // 上移指定索引的記錄
+        function moveItemUp(index) {
+            if (index > 0) {
+                [rmaItems[index], rmaItems[index - 1]] = [rmaItems[index - 1], rmaItems[index]];
+                renderRmaItems();
+            }
+        }
+
+        // 下移指定索引的記錄
+        function moveItemDown(index) {
+            if (index < rmaItems.length - 1) {
+                [rmaItems[index], rmaItems[index + 1]] = [rmaItems[index + 1], rmaItems[index]];
+                renderRmaItems();
+            }
+        }
+
+        // 處理動態輸入欄位的值變更
+        function handleInputChange(index, field, value) {
+            if (rmaItems[index]) {
+                rmaItems[index][field] = value;
+                updateOutput();
+            }
+        }
+
+        // 渲染 RMA 項目列表
+        function renderRmaItems() {
+            const container = document.getElementById('rmaListContainer');
+            
+            if (rmaItems.length === 0) {
+                container.innerHTML = `<div class="p-6 text-center text-gray-500 italic">目前沒有 RMA 記錄，請點擊上方按鈕新增資料。</div>`;
+                updateOutput();
+                return;
+            }
+            
+            let html = `
+                <table class="w-full text-sm input-table">
+                    <thead>
+                        <tr class="bg-gray-200">
+                            <th class="w-4">#</th>
+                            <th>RMA No.</th>
+                            <th>設備 ID</th>
+                            <th>故障序號 (Def. SN)</th>
+                            <th class="bg-red-100">換上序號 (Rep. SN)</th>
+                            <th class="bg-red-100">貨運單號 (Tracking)</th>
+                            <th class="bg-red-100">備註/描述</th>
+                            <th class="w-16">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            rmaItems.forEach((item, index) => {
+                // 產品描述作為備註輸入框的 Placeholder
+                const placeholderNotes = item.productDesc || '手動輸入備註...';
+
+                html += `
+                    <tr class="hover:bg-gray-100 border-t border-gray-200">
+                        <td class="text-center">${index + 1}</td>
+                        <td>
+                            <input type="text" value="${item.rmaNo}" oninput="handleInputChange(${index}, 'rmaNo', this.value)" placeholder="RMA No." />
+                        </td>
+                        <td>
+                            <input type="text" value="${item.productID}" oninput="handleInputChange(${index}, 'productID', this.value)" placeholder="產品型號" />
+                        </td>
+                        <td>
+                            <input type="text" value="${item.defectiveSn}" oninput="handleInputChange(${index}, 'defectiveSn', this.value)" placeholder="故障序號" />
+                        </td>
+                        <td>
+                            <input type="text" value="${item.replacementSn}" oninput="handleInputChange(${index}, 'replacementSn', this.value)" placeholder="必填" class="bg-green-50" />
+                        </td>
+                        <td>
+                            <input type="text" value="${item.trackingNumber}" oninput="handleInputChange(${index}, 'trackingNumber', this.value)" placeholder="必填" class="bg-blue-50" />
+                        </td>
+                        <td>
+                            <input type="text" value="${item.notes}" oninput="handleInputChange(${index}, 'notes', this.value)" placeholder="${placeholderNotes}" />
+                        </td>
+                        <td class="text-center">
+                            <div class="flex flex-col items-center space-y-1">
+                                <!-- Move Up Button -->
+                                <button onclick="moveItemUp(${index})" 
+                                    class="text-gray-500 hover:text-indigo-700 p-1 rounded transition disabled:opacity-30" 
+                                    ${index === 0 ? 'disabled' : ''} title="上移">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 10l7-7m0 0l7 7m-7-7v18"></path></svg>
+                                </button>
+                                <!-- Move Down Button -->
+                                <button onclick="moveItemDown(${index})" 
+                                    class="text-gray-500 hover:text-indigo-700 p-1 rounded transition disabled:opacity-30" 
+                                    ${index === rmaItems.length - 1 ? 'disabled' : ''} title="下移">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"></path></svg>
+                                </button>
+                                <!-- Delete Button -->
+                                <button onclick="deleteItem(${index})" class="text-red-500 hover:text-red-700 p-1 rounded transition" title="刪除">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3m-3 0h14"></path></svg>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            });
+
+            html += `
+                    </tbody>
+                </table>
+            `;
+            container.innerHTML = html;
+            updateOutput();
+        }
+
+        // 更新輸出 (HTML 及 純文字表格)
+        function updateOutput() {
+            document.getElementById('itemCount').textContent = rmaItems.length;
+            
+            const { htmlTable, plaintextTable } = generateTables(rmaItems);
+
+            document.getElementById('htmlTableOutput').innerHTML = htmlTable;
+            document.getElementById('plaintextTableOutput').textContent = plaintextTable;
+        }
+
+        // 生成所有格式的表格
+        function generateTables(items) {
+            if (items.length === 0) {
+                const emptyMsg = '<p class="text-gray-500 italic">無 RMA 記錄可生成表格。</p>';
+                return { htmlTable: emptyMsg, plaintextTable: '無 RMA 記錄可生成表格' };
+            }
+
+            // --- 1. HTML Table Generation ( for Email ) ---
+            // 確保所有樣式都以 inline CSS 呈現，以最大化郵件軟體的相容性。
+            let bodyHtml = '';
+            const thStyle = "border: 1px solid #e5e7eb; padding: 10px 12px; text-align: left; background-color: #f3f4f6; font-weight: 600;";
+            const tdStyle = "border: 1px solid #e5e7eb; padding: 10px 12px; text-align: left;";
+            const tdSnStyle = "border: 1px solid #e5e7eb; padding: 10px 12px; text-align: left; font-weight: bold; color: #10B981;"; // 綠色
+            const tdTrackStyle = "border: 1px solid #e5e7eb; padding: 10px 12px; text-align: left; font-weight: bold; color: #3B82F6;"; // 藍色
+
+            items.forEach(item => {
+                // 備註只顯示使用者輸入的 notes 欄位
+                let displayNotes = item.notes.trim() || 'N/A';
+
+                bodyHtml += `
+                    <tr>
+                        <td style="${tdStyle}">${item.rmaNo || 'N/A'}</td>
+                        <td style="${tdStyle}">${item.productID || 'N/A'}</td>
+                        <td style="${tdSnStyle}">${item.replacementSn || '【待確認】'}</td>
+                        <td style="${tdStyle}">${item.defectiveSn || 'N/A'}</td>
+                        <td style="${tdStyle}">${displayNotes}</td>
+                        <td style="${tdTrackStyle}">${item.trackingNumber || '【待填寫】'}</td>
+                    </tr>
+                `;
+            });
+
+            const tableStyle = "width: 100%; border-collapse: collapse; font-size: 0.9rem; font-family: 'Inter', 'Microsoft JhengHei', sans-serif;";
+            
+            const htmlTable = `
+                <table style="${tableStyle}">
+                    <thead>
+                        <tr>
+                            <th style="${thStyle}">RMA</th>
+                            <th style="${thStyle}">設備型號 (Product ID)</th>
+                            <th style="${thStyle}">換上序號 (Replacement SN)</th>
+                            <th style="${thStyle}">換下序號 (Defective SN)</th>
+                            <th style="${thStyle}">備註 (Notes)</th>
+                            <th style="${thStyle}">貨運單號 (Tracking)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${bodyHtml.trim()}
+                    </tbody>
+                </table>
+            `;
+
+            // --- 2. Plaintext Table Generation ( for Excel/Clipboard ) ---
+            
+            const plaintextHeader = [
+                "RMA", "設備型號 (Product ID)", "換上序號 (Replacement SN)", 
+                "換下序號 (Defective SN)", "備註 (Notes)", "貨運單號 (Tracking)"
+            ];
+            
+            let plaintextOutput = plaintextHeader.join('\t') + '\n'; // Tab-separated header
+
+            items.forEach(item => {
+                const displayNotes = item.notes.trim();
+                
+                const row = [
+                    item.rmaNo || '',
+                    item.productID || '',
+                    item.replacementSn || '',
+                    item.defectiveSn || '',
+                    displayNotes,
+                    item.trackingNumber || '',
+                ];
+                plaintextOutput += row.join('\t') + '\n'; // Tab-separated rows
+            });
+            
+            return { htmlTable: htmlTable.trim(), plaintextTable: plaintextOutput.trim() };
+        }
+        
+        // 顯示複製成功或失敗的訊息
+        function showCopyMessage(msg, bgColor, buttonId) {
+            const copiedMsg = document.getElementById('copiedMsg');
+            copiedMsg.textContent = msg;
+            copiedMsg.className = `copied-message fixed bottom-4 right-4 ${bgColor} text-white px-5 py-3 rounded-xl shadow-2xl show`;
+
+            if (buttonId) {
+                const button = document.getElementById(buttonId);
+                const originalHtml = button.innerHTML;
+                button.innerHTML = '<svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> 已複製';
+                
+                setTimeout(() => {
+                    button.innerHTML = originalHtml;
+                }, 2000);
+            }
+
+            setTimeout(() => {
+                copiedMsg.classList.remove('show');
+                copiedMsg.className = `copied-message fixed bottom-4 right-4 bg-gray-800 text-white px-5 py-3 rounded-xl shadow-2xl`; 
+            }, 2000);
+        }
+
+        // 複製內容到剪貼簿 (根據類型選擇 HTML 或純文字)
+        function copyTableContent(type) {
+            const outputElement = type === 'html' ? 
+                document.getElementById('htmlTableOutput').querySelector('table') :
+                document.getElementById('plaintextTableOutput');
+            
+            const buttonId = type === 'html' ? 'copyHtmlBtn' : 'copyPlaintextBtn';
+
+            if (rmaItems.length === 0) {
+                showCopyMessage('無內容可複製！請新增 RMA 記錄。', 'bg-red-600');
+                return;
+            }
+
+            const contentToCopy = type === 'html' ? outputElement.outerHTML : outputElement.textContent;
+
+            // 由於環境限制，直接使用 document.execCommand('copy') 備用方法
+            fallbackCopy(contentToCopy, type, buttonId);
+        }
+        
+        // 舊版瀏覽器或 iFrame 環境下的複製 fallback
+        function fallbackCopy(content, type, buttonId) {
+            let tempEl;
+            
+            if (type === 'html') {
+                // For HTML (Rich Text), use a div and selection API to copy the structured content
+                tempEl = document.createElement('div');
+                tempEl.innerHTML = content;
+                // 必須將元素添加到 DOM 中才能被選取和複製
+                document.body.appendChild(tempEl);
+
+                // 選取元素內的全部內容
+                const selection = window.getSelection();
+                const range = document.createRange();
+                range.selectNodeContents(tempEl);
+                selection.removeAllRanges();
+                selection.addRange(range);
+                
+            } else {
+                // For plaintext (Excel), use a textarea
+                tempEl = document.createElement('textarea');
+                tempEl.value = content;
+                document.body.appendChild(tempEl);
+                tempEl.select(); // Select for textarea
+            }
+            
+            // 將臨時元素移到視窗外，避免對使用者造成干擾
+            tempEl.style.position = 'absolute';
+            tempEl.style.left = '-9999px';
+
+            try {
+                // 使用 document.execCommand('copy')
+                const successful = document.execCommand('copy');
+
+                // 清除 HTML 複製時建立的選取範圍
+                if (type === 'html') {
+                    window.getSelection().removeAllRanges();
+                }
+
+                if (successful) {
+                    showCopyMessage(`${type === 'html' ? 'HTML 表格' : '純文字表格'}已成功複製！`, 'bg-blue-600', buttonId);
+                } else {
+                    showCopyMessage('複製失敗，請手動選取複製。', 'bg-red-600');
+                }
+            } catch (err) {
+                console.error('Copy failed (fallback):', err);
+                showCopyMessage('複製失敗，請手動選取複製。', 'bg-red-600');
+            }
+            document.body.removeChild(tempEl);
+        }
+
+        // 頁面載入時執行一次初始化
+        window.onload = function() {
+            // 載入預設範例資料 1 (標準 RMA 格式)
+            rmaItems.push({
+                id: Date.now() + 1,
+                rmaNo: 'R200591359',
+                defectiveSn: 'TU8SA68128',
+                productID: 'ACX710DC',
+                productDesc: 'ACX710 DC, HW and OS',
+                replacementSn: 'QCS2747V1B1',
+                trackingNumber: '39250014444',
+                notes: 'FPC 0 PEM 0 Feed B not connected.'
+            });
+            // 載入預設範例資料 2 (標準 RMA 格式)
+            rmaItems.push({
+                id: Date.now() + 2,
+                rmaNo: 'R200591920',
+                defectiveSn: 'QGS1827V04E',
+                productID: 'PWR-MX960-4100-DC',
+                productDesc: 'PWR-MX960 Power Supply',
+                replacementSn: 'QGS2747V1B1',
+                trackingNumber: '39250014444',
+                notes: 'PEM3 Fan Failed'
+            });
+            
+            // 載入使用者提供的新範例 (換貨格式 - 舊)
+            rmaItems.push({
+                id: Date.now() + 3,
+                rmaNo: '', 
+                defectiveSn: 'TU8SA79237',
+                productID: 'ACX710', 
+                productDesc: '',
+                replacementSn: 'TU8SB95388',
+                trackingNumber: '',
+                notes: 'TCC84056000-ACX710-01 PEM 0 Feed B Not OK'
+            });
+
+            // 載入使用者提供的新範例 (換貨格式 - 新簡短)
+            rmaItems.push({
+                id: Date.now() + 4,
+                rmaNo: '', 
+                defectiveSn: 'TU8SA79091',
+                productID: 'ACX710', 
+                productDesc: '',
+                replacementSn: 'TU8SB93253',
+                trackingNumber: '',
+                notes: 'TCC74523000-ACX710-01\n磁區異常 換下'
+            });
+
+
+            renderRmaItems(); 
+        }
+    </script>
+</body>
+</html>
