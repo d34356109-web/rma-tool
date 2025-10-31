@@ -231,6 +231,26 @@ TCC84056000-ACX710-01 (Reference ID)
             </div>
         </div>
 
+        <!-- 批次詳情 Modal -->
+        <div id="batchDetailModal" class="fixed inset-0 bg-gray-900 bg-opacity-75 hidden items-center justify-center p-4 z-50">
+            <div class="bg-white rounded-xl shadow-2xl p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+                <h3 class="text-2xl font-bold mb-4 text-gray-700">批次詳情: <span id="detailBatchName" class="text-indigo-600"></span></h3>
+                <div id="detailBatchContent" class="mb-4 overflow-x-auto table-output">
+                    <p class="text-gray-500 italic">載入中...</p>
+                </div>
+                <div class="flex justify-between items-center mt-6 border-t pt-4">
+                    <button onclick="loadBatchToEditor()" id="detailLoadBtn"
+                        class="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition">
+                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                        載入至編輯區 (將覆蓋當前資料)
+                    </button>
+                    <button onclick="hideBatchDetailModal()" class="px-4 py-2 bg-gray-300 rounded-lg hover:bg-gray-400 transition">
+                        關閉
+                    </button>
+                </div>
+            </div>
+        </div>
+
         <!-- 複製成功提示 -->
         <div id="copiedMsg" class="copied-message fixed bottom-4 right-4 bg-gray-800 text-white px-5 py-3 rounded-xl shadow-2xl">
             已成功複製到剪貼簿！
@@ -248,6 +268,8 @@ TCC84056000-ACX710-01 (Reference ID)
         let db, auth;
         let userId = 'anonymous'; 
         let isAuthReady = false;
+        // 用於在詳情視窗和載入功能之間傳遞選定的歷史批次資料
+        let currentDetailBatchRecords = null; 
         
         // Firestore 集合路徑
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
@@ -272,8 +294,6 @@ TCC84056000-ACX710-01 (Reference ID)
             db = getFirestore(app);
             auth = getAuth(app);
 
-            const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-
             onAuthStateChanged(auth, async (user) => {
                 const loadingMsg = document.getElementById('loadingMessage');
                 const userInfo = document.getElementById('userInfo');
@@ -289,16 +309,13 @@ TCC84056000-ACX710-01 (Reference ID)
                     console.log("Firebase initialized and user authenticated:", userId);
                     loadHistoryListener(); // 監聽歷史記錄
                 } else {
-                    // 如果沒有用戶，嘗試使用提供的 token 登入，否則匿名登入
+                    // 總是嘗試匿名登入 (最穩定的方法)
                     try {
-                        if (initialAuthToken) {
-                            await signInWithCustomToken(auth, initialAuthToken);
-                        } else {
-                            await signInAnonymously(auth);
-                        }
+                        await signInAnonymously(auth);
                     } catch (error) {
                         console.error("Authentication failed:", error);
-                        loadingMsg.textContent = '認證失敗，功能受限。';
+                        // 修正後的錯誤提示：明確指示檢查匿名登入設定
+                        loadingMsg.textContent = `認證失敗，功能受限。請檢查 Firebase Console 中的「Authentication (匿名登入)」設定是否已啟用。錯誤碼: ${error.code || '未知'}`;
                         loadingMsg.classList.add('text-red-700');
                         isAuthReady = true;
                         dataControl.classList.add('hidden'); // 隱藏儲存功能
@@ -311,130 +328,6 @@ TCC84056000-ACX710-01 (Reference ID)
             isAuthReady = true; // 允許應用程式的其他部分運行
         }
         
-        // --- 資料庫操作功能 ---
-
-        // 儲存當前的 RMA 批次到 Firestore
-        window.saveCurrentBatch = async function() {
-            if (!isAuthReady || rmaItems.length === 0) {
-                alert('請先登入或新增 RMA 記錄才能儲存。');
-                return;
-            }
-
-            const batchNameInput = document.getElementById('batchNameInput');
-            let batchName = batchNameInput.value.trim() || `RMA 批次 - ${new Date().toLocaleString('zh-TW', { dateStyle: 'short', timeStyle: 'short' })}`;
-
-            if (!batchName) return;
-
-            try {
-                const docRef = await addDoc(collection(db, FIRESTORE_COLLECTION_PATH), {
-                    userId: userId,
-                    name: batchName,
-                    timestamp: Date.now(),
-                    // 將整個 RMA 陣列序列化為 JSON 字串以便安全儲存
-                    records: JSON.stringify(rmaItems), 
-                });
-                showCopyMessage(`批次 "${batchName}" (ID: ${docRef.id.substring(0, 4)}...) 儲存成功！`, 'bg-green-600', 'saveBtn');
-                batchNameInput.value = ''; // 清空名稱輸入框
-            } catch (e) {
-                console.error("Error adding document: ", e);
-                showCopyMessage("儲存失敗：請檢查網路或權限。", 'bg-red-600', 'saveBtn');
-            }
-        }
-
-        // 監聽歷史記錄
-        function loadHistoryListener() {
-            if (!isAuthReady) return;
-
-            const q = query(collection(db, FIRESTORE_COLLECTION_PATH), orderBy("timestamp", "desc"));
-            
-            onSnapshot(q, (snapshot) => {
-                const historyList = document.getElementById('historyList');
-                historyList.innerHTML = '';
-                
-                if (snapshot.empty) {
-                    historyList.innerHTML = '<p class="text-gray-500 italic">目前沒有歷史批次記錄。</p>';
-                    return;
-                }
-
-                snapshot.docs.forEach(doc => {
-                    const data = doc.data();
-                    const date = new Date(data.timestamp).toLocaleString('zh-TW', { dateStyle: 'medium', timeStyle: 'short' });
-                    const recordCount = JSON.parse(data.records).length;
-
-                    const itemHtml = `
-                        <div class="flex justify-between items-center p-3 border rounded-lg bg-white shadow-sm hover:bg-gray-50">
-                            <div>
-                                <p class="font-semibold text-gray-800">${data.name} (<span class="text-xs text-gray-500">${recordCount} 筆記錄</span>)</p>
-                                <p class="text-xs text-gray-500">儲存者: ${data.userId.substring(0, 8)}... | 時間: ${date}</p>
-                            </div>
-                            <div class="flex gap-2">
-                                <button onclick="loadBatch('${doc.id}')" class="px-3 py-1 bg-indigo-500 text-white text-sm rounded-lg hover:bg-indigo-600 transition">
-                                    載入
-                                </button>
-                                <button onclick="deleteBatch('${doc.id}', '${data.userId}')" class="px-3 py-1 bg-red-500 text-white text-sm rounded-lg hover:bg-red-600 transition">
-                                    刪除
-                                </button>
-                            </div>
-                        </div>
-                    `;
-                    historyList.innerHTML += itemHtml;
-                });
-            }, (error) => {
-                console.error("Error listening to history:", error);
-                document.getElementById('historyList').innerHTML = '<p class="text-red-500 italic">載入歷史記錄失敗。</p>';
-            });
-        }
-
-        // 載入指定的批次記錄到當前編輯器
-        window.loadBatch = function(docId) {
-            const historyList = document.getElementById('historyList');
-            const targetDoc = historyList.querySelector(`[onclick="loadBatch('${docId}')"]`).closest('div').querySelector('.font-semibold').textContent;
-
-            const confirmLoad = confirm(`確定要載入批次 "${targetDoc.split('(')[0].trim()}" 嗎？這將覆蓋當前編輯中的資料！`);
-            if (!confirmLoad) return;
-
-            // 這裡使用一個臨時快照讀取，確保我們拿到最新的資料
-            const unsubscribe = onSnapshot(doc(db, FIRESTORE_COLLECTION_PATH, docId), (docSnapshot) => {
-                if (docSnapshot.exists()) {
-                    const data = docSnapshot.data();
-                    try {
-                        const records = JSON.parse(data.records);
-                        // 賦值並刷新 UI
-                        rmaItems = records; 
-                        renderRmaItems();
-                        hideHistoryModal();
-                        showCopyMessage(`批次 "${data.name}" 載入成功！`, 'bg-indigo-600');
-                    } catch (e) {
-                        console.error("Error parsing records:", e);
-                        showCopyMessage('載入失敗：資料格式錯誤。', 'bg-red-600');
-                    }
-                } else {
-                    showCopyMessage('載入失敗：批次不存在。', 'bg-red-600');
-                }
-                // 停止這個臨時監聽器
-                unsubscribe(); 
-            });
-        }
-        
-        // 刪除指定的批次記錄
-        window.deleteBatch = async function(docId, ownerId) {
-            if (userId !== ownerId) {
-                alert('您只能刪除您自己儲存的批次記錄。');
-                return;
-            }
-
-            const confirmDelete = confirm('確定要永久刪除這筆歷史記錄嗎？');
-            if (!confirmDelete) return;
-
-            try {
-                await deleteDoc(doc(db, FIRESTORE_COLLECTION_PATH, docId));
-                showCopyMessage('批次記錄已刪除。', 'bg-red-600');
-            } catch (e) {
-                console.error("Error deleting document: ", e);
-                showCopyMessage("刪除失敗：請檢查網路或權限。", 'bg-red-600');
-            }
-        }
-
         // --- MODAL 顯示/隱藏函數 ---
         window.showPasteModal = function() {
             document.getElementById('pasteModal').style.display = 'flex';
@@ -461,9 +354,226 @@ TCC84056000-ACX710-01 (Reference ID)
         window.hideHistoryModal = function() {
             document.getElementById('historyModal').style.display = 'none';
         }
+        
+        window.showBatchDetailModal = function() {
+            document.getElementById('batchDetailModal').style.display = 'flex';
+        }
+        
+        window.hideBatchDetailModal = function() {
+            document.getElementById('batchDetailModal').style.display = 'none';
+            currentDetailBatchRecords = null; // 清空緩存
+        }
 
 
-        // --- 資料解析邏輯 ---
+        // --- 資料庫操作功能 ---
+
+        // 儲存當前的 RMA 批次到 Firestore
+        window.saveCurrentBatch = async function() {
+            if (!isAuthReady || rmaItems.length === 0) {
+                alert('請先登入或新增 RMA 記錄才能儲存。');
+                return;
+            }
+
+            const batchNameInput = document.getElementById('batchNameInput');
+            let batchName = batchNameInput.value.trim() || `RMA 批次 - ${new Date().toLocaleString('zh-TW', { dateStyle: 'short', timeStyle: 'short' })}`;
+
+            if (!batchName) return;
+
+            try {
+                const docRef = await addDoc(collection(db, FIRESTORE_COLLECTION_PATH), {
+                    userId: userId,
+                    name: batchName,
+                    timestamp: Date.now(),
+                    // 將整個 RMA 陣列序列化為 JSON 字串以便安全儲存
+                    records: JSON.stringify(rmaItems), 
+                });
+                
+                // 儲存成功後清空畫面
+                rmaItems = []; 
+                renderRmaItems(); 
+
+                showCopyMessage(`批次 "${batchName}" (ID: ${docRef.id.substring(0, 4)}...) 儲存成功！`, 'bg-green-600', 'saveBtn');
+                batchNameInput.value = ''; // 清空名稱輸入框
+            } catch (e) {
+                console.error("Error adding document: ", e);
+                showCopyMessage("儲存失敗：請檢查網路或權限。", 'bg-red-600', 'saveBtn');
+            }
+        }
+
+        // 監聽歷史記錄 (只負責載入列表)
+        function loadHistoryListener() {
+            if (!isAuthReady) return;
+
+            const q = query(collection(db, FIRESTORE_COLLECTION_PATH), orderBy("timestamp", "desc"));
+            
+            onSnapshot(q, (snapshot) => {
+                const historyList = document.getElementById('historyList');
+                historyList.innerHTML = '';
+                
+                if (snapshot.empty) {
+                    historyList.innerHTML = '<p class="text-gray-500 italic">目前沒有歷史批次記錄。</p>';
+                    return;
+                }
+
+                snapshot.docs.forEach(doc => {
+                    const data = doc.data();
+                    const date = new Date(data.timestamp).toLocaleString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+                    // 使用 try-catch 處理 JSON 解析錯誤
+                    let recordCount = 0;
+                    try {
+                         recordCount = JSON.parse(data.records).length;
+                    } catch (e) {
+                        console.error("Error parsing records count:", e);
+                    }
+
+
+                    const itemHtml = `
+                        <div class="flex justify-between items-center p-3 border rounded-lg bg-white shadow-sm hover:bg-gray-50">
+                            <div>
+                                <p class="font-semibold text-gray-800">${data.name} (<span class="text-xs text-gray-500">${recordCount} 筆記錄</span>)</p>
+                                <p class="text-xs text-gray-500">儲存者: ${data.userId.substring(0, 8)}... | 時間: ${date}</p>
+                            </div>
+                            <div class="flex gap-2">
+                                <button onclick="fetchAndShowBatchDetails('${doc.id}')" class="px-3 py-1 bg-indigo-500 text-white text-sm rounded-lg hover:bg-indigo-600 transition whitespace-nowrap">
+                                    檢視詳情
+                                </button>
+                                <button onclick="deleteBatch('${doc.id}', '${data.userId}')" class="px-3 py-1 bg-red-500 text-white text-sm rounded-lg hover:bg-red-600 transition">
+                                    刪除
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                    historyList.innerHTML += itemHtml;
+                });
+            }, (error) => {
+                console.error("Error listening to history:", error);
+                document.getElementById('historyList').innerHTML = '<p class="text-red-500 italic">載入歷史記錄失敗。</p>';
+            });
+        }
+
+        // 獲取並顯示批次詳情 (非破壞性操作)
+        window.fetchAndShowBatchDetails = function(docId) {
+            // 隱藏歷史清單
+            hideHistoryModal(); 
+            
+            const detailContent = document.getElementById('detailBatchContent');
+            detailContent.innerHTML = '<p class="text-gray-500 italic p-4 text-center">載入中...</p>';
+
+            // 這裡使用一個臨時快照讀取，確保我們拿到最新的資料
+            const unsubscribe = onSnapshot(doc(db, FIRESTORE_COLLECTION_PATH, docId), (docSnapshot) => {
+                unsubscribe(); // 讀取一次後立即停止監聽
+                
+                if (docSnapshot.exists()) {
+                    const data = docSnapshot.data();
+                    document.getElementById('detailBatchName').textContent = data.name;
+                    
+                    try {
+                        // 解析記錄並儲存到全局變數，以供載入功能使用
+                        const records = JSON.parse(data.records);
+                        currentDetailBatchRecords = records;
+                        
+                        // 渲染唯讀表格
+                        detailContent.innerHTML = renderBatchDetailTable(records);
+
+                        // 顯示詳情視窗
+                        showBatchDetailModal();
+
+                    } catch (e) {
+                        console.error("Error parsing records:", e);
+                        detailContent.innerHTML = '<p class="text-red-500 italic p-4 text-center">載入失敗：資料格式錯誤。</p>';
+                        showBatchDetailModal();
+                    }
+                } else {
+                    detailContent.innerHTML = '<p class="text-red-500 italic p-4 text-center">載入失敗：批次不存在。</p>';
+                    showBatchDetailModal();
+                }
+            });
+        }
+
+        // 渲染唯讀批次詳情表格
+        function renderBatchDetailTable(items) {
+             let bodyHtml = '';
+            const thStyle = "border: 1px solid #e5e7eb; padding: 10px 12px; text-align: left; background-color: #f3f4f6; font-weight: 600;";
+            const tdStyle = "border: 1px solid #e5e7eb; padding: 10px 12px; text-align: left;";
+            const tdSnStyle = "border: 1px solid #e5e7eb; padding: 10px 12px; text-align: left; font-weight: bold; color: #10B981;"; 
+            const tdTrackStyle = "border: 1px solid #e5e7eb; padding: 10px 12px; text-align: left; font-weight: bold; color: #3B82F6;"; 
+
+            items.forEach((item, index) => {
+                let displayNotes = item.notes.trim() || 'N/A';
+
+                bodyHtml += `
+                    <tr>
+                        <td style="${tdStyle}">${index + 1}</td>
+                        <td style="${tdStyle}">${item.rmaNo || 'N/A'}</td>
+                        <td style="${tdStyle}">${item.productID || 'N/A'}</td>
+                        <td style="${tdStyle}">${item.defectiveSn || 'N/A'}</td>
+                        <td style="${tdSnStyle}">${item.replacementSn || '【待確認】'}</td>
+                        <td style="${tdStyle}">${displayNotes}</td>
+                        <td style="${tdTrackStyle}">${item.trackingNumber || '【待填寫】'}</td>
+                    </tr>
+                `;
+            });
+
+            const tableStyle = "width: 100%; border-collapse: collapse; font-size: 0.9rem; font-family: 'Inter', 'Microsoft JhengHei', sans-serif;";
+            
+            return `
+                <table style="${tableStyle}">
+                    <thead>
+                        <tr>
+                            <th style="${thStyle}" class="w-10">#</th>
+                            <th style="${thStyle}">RMA</th>
+                            <th style="${thStyle}">設備型號</th>
+                            <th style="${thStyle}">換下序號 (Def. SN)</th>
+                            <th style="${thStyle}">換上序號 (Rep. SN)</th>
+                            <th style="${thStyle}">備註 (Notes)</th>
+                            <th style="${thStyle}">貨運單號</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${bodyHtml.trim()}
+                    </tbody>
+                </table>
+            `;
+        }
+
+        // 載入指定的批次記錄到當前編輯器 (點擊詳情視窗中的載入按鈕時觸發)
+        window.loadBatchToEditor = function() {
+            if (!currentDetailBatchRecords) {
+                showCopyMessage('載入失敗：未選擇有效的批次。', 'bg-red-600');
+                return;
+            }
+
+            const confirmLoad = confirm('確定要載入此批次嗎？這將覆蓋您當前編輯中的所有資料！');
+            if (!confirmLoad) return;
+
+            // 賦值並刷新 UI
+            rmaItems = currentDetailBatchRecords; 
+            renderRmaItems();
+            hideBatchDetailModal();
+            showCopyMessage(`批次 "${document.getElementById('detailBatchName').textContent}" 載入成功！`, 'bg-indigo-600');
+            currentDetailBatchRecords = null; // 清理全局變數
+        }
+        
+        // 刪除指定的批次記錄
+        window.deleteBatch = async function(docId, ownerId) {
+            if (userId !== ownerId) {
+                alert('您只能刪除您自己儲存的批次記錄。');
+                return;
+            }
+
+            const confirmDelete = confirm('確定要永久刪除這筆歷史記錄嗎？');
+            if (!confirmDelete) return;
+
+            try {
+                await deleteDoc(doc(db, FIRESTORE_COLLECTION_PATH, docId));
+                showCopyMessage('批次記錄已刪除。', 'bg-red-600');
+            } catch (e) {
+                console.error("Error deleting document: ", e);
+                showCopyMessage("刪除失敗：請檢查網路或權限。", 'bg-red-600');
+            }
+        }
+
+        // --- 資料解析邏輯 (保持不變) ---
         function parseRmaText(input) {
             const data = {};
             if (!input) return data;
@@ -520,7 +630,7 @@ TCC84056000-ACX710-01 (Reference ID)
             return data;
         }
 
-        // --- 資料處理與新增/合併 ---
+        // --- 資料處理與新增/合併 (保持不變) ---
 
         window.extractAndAddItem = function(type) {
             let input, parsedData;
@@ -617,7 +727,7 @@ TCC84056000-ACX710-01 (Reference ID)
             }
         }
 
-        // --- 渲染與輸出邏輯 ---
+        // --- 渲染與輸出邏輯 (保持不變) ---
 
         function renderRmaItems() {
             const container = document.getElementById('rmaListContainer');
@@ -781,7 +891,7 @@ TCC84056000-ACX710-01 (Reference ID)
             return { htmlTable: htmlTable.trim(), plaintextTable: plaintextOutput.trim() };
         }
         
-        // --- 剪貼簿邏輯 ---
+        // --- 剪貼簿邏輯 (保持不變) ---
 
         function showCopyMessage(msg, bgColor, buttonId) {
             const copiedMsg = document.getElementById('copiedMsg');
