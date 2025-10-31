@@ -1049,59 +1049,64 @@ TCC84056000-ACX710-01 (Reference ID)
 
             // 創建一個臨時視窗來包含內容並觸發列印
             const printWindow = window.open('', '', 'height=600,width=800');
-            printWindow.document.write('<html><head><title>RMA 寄件表格列印</title>');
+            printWindow.document.write('<html><head>');
             
+            // 移除 title，避免瀏覽器在頁面頂部印出標題
+            // printWindow.document.write('<title>RMA 寄件表格列印</title>'); // 移除此行
+
             // 引入列印專用樣式
             printWindow.document.write(`
                 <style>
-                    body { font-family: 'Inter', 'Microsoft JhengHei', sans-serif; margin: 0; padding: 0; background-color: white; }
-                    /* 強制每一筆記錄列印在新的一頁 */
-                    @media print {
-                        .shipping-form { 
-                            page-break-after: always; 
-                            border: 1px solid #000; /* 列印時確保邊框可見 */
-                            box-shadow: none; /* 列印時移除陰影 */
-                        }
-                        /* 確保內嵌表格的邊框列印出來 */
-                        .shipping-detail-table { border: 1px solid #000 !important; }
-                        .shipping-detail-table th, .shipping-detail-table td { border: 1px solid #000 !important; padding: 8px 10px; }
-                        .shipping-form h4 { font-size: 1.2rem; }
-                        
-                        /* 強化列印字體大小和粗細 */
-                        .shipping-form p, .shipping-form td { font-size: 16px !important; font-weight: normal; }
-                        .shipping-form .large-bold { font-size: 20px !important; font-weight: bold !important; color: #d97706 !important; }
-                        .shipping-form .medium-bold { font-size: 18px !important; font-weight: bold !important; }
+                    /* 1. 移除頁面邊距和預設標題/頁腳，嘗試橫向 A4 佈局 */
+                    @page { 
+                        size: A4 landscape; /* 嘗試設置橫向 A4 */
+                        margin: 0.5cm; /* 設置極小邊距 */
                     }
-                    .shipping-form {
-                        padding: 20px;
-                        border: 1px solid #ccc;
-                        margin: 20px auto;
-                        width: 100%;
-                        max-width: 800px;
+                    
+                    body { 
+                        font-family: 'Inter', 'Microsoft JhengHei', sans-serif; 
+                        margin: 0; 
+                        padding: 0; 
+                        background-color: white; 
+                        width: 100%; /* 確保內容佔滿寬度 */
                     }
+                    
+                    /* 2. 強制每一筆記錄列印在新的一頁 */
+                    .shipping-form { 
+                        page-break-after: always; 
+                        border: 2px solid #000; /* 列印時確保外框清晰可見 */
+                        box-shadow: none; 
+                        padding: 15px; /* 略微縮小 padding 讓內容更緊湊 */
+                        width: 98%; /* 盡可能佔滿 A4 寬度 */
+                        margin: 5px auto; /* 小邊距 */
+                    }
+
+                    /* 3. 強化字體大小和粗細 */
+                    .shipping-form p, .shipping-form th, .shipping-form td { 
+                        font-size: 18px !important; /* 基礎字體放大 */
+                        font-weight: normal; 
+                    }
+                    
                     .shipping-form h4 {
-                        border-bottom: 2px solid #3b82f6;
+                        font-size: 1.5rem !important;
+                        border-bottom: 2px solid #3b82f6 !important;
                         padding-bottom: 8px;
-                        margin-bottom: 15px;
-                        font-size: 1.2rem;
+                        margin-bottom: 10px;
                         color: #1f2937;
                     }
-                    /* 寄件表格內的表格樣式 */
-                    .shipping-detail-table {
-                        border: 1px solid #000;
-                        border-collapse: collapse;
-                        width: 100%;
-                        margin-bottom: 15px;
-                    }
-                    .shipping-detail-table th, .shipping-detail-table td {
-                        border: 1px solid #000;
-                        padding: 8px 10px;
-                        text-align: left;
-                        font-size: 14px;
+
+                    .shipping-detail-table th, .shipping-detail-table td { 
+                        border: 1px solid #000 !important; 
+                        padding: 10px !important; 
+                        height: auto;
                     }
                     .shipping-detail-table th {
                         background-color: #f3f4f6;
+                        font-weight: bold !important;
                     }
+                    /* 關鍵資訊特大字體 */
+                    .key-rma-number { font-size: 24px !important; font-weight: bold !important; color: #cc0000 !important; }
+                    .key-serial-number { font-size: 20px !important; font-weight: bold !important; }
                 </style>
             `);
             
