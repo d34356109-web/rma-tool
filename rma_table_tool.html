@@ -329,7 +329,10 @@ TCC84056000-ACX710-01 (Reference ID)
         // --- 寄件表格固定資訊 (START) ---
         // 這些資訊通常是固定的，請根據您的實際情況修改以下內容：
         const SENDER_INFO = "From: 806-60 高雄市前鎮區中山二路 2 號 11 樓之 1 室 (王信傑 0986-751-710)";
-        const RECIPIENT_INFO = "To: UPS(Alex Kuo) 27908153#12 114 台北市內湖區民權東路六段 2 號 4 樓";
+        // 使用者確認的 TO 資訊
+        const RECIPIENT_TO = "UPS(Alex Kuo) 27908153#12"; 
+        const RECIPIENT_ADDRESS = "114 台北市內湖區民權東路六段 2 號 4 樓";
+        const RECIPIENT_INFO = `To: ${RECIPIENT_TO} ${RECIPIENT_ADDRESS}`;
         const SERVICE_LEVEL = "RETURN TO FACTORY REPAIR OR REPLACE";
         // --- 寄件表格固定資訊 (END) ---
 
@@ -951,7 +954,7 @@ TCC84056000-ACX710-01 (Reference ID)
             return { htmlTable: htmlTable.trim(), plaintextTable: plaintextOutput.trim() };
         }
         
-        // C. 寄件表格生成函數 (已修正為單據樣式)
+        // C. 寄件表格生成函數 (已修正為單據樣式，並強化字體大小和粗細)
         window.generateShippingForms = function(items) {
             if (items.length === 0) {
                 return '<p class="text-gray-500 italic">無 RMA 記錄可生成寄件表格。</p>';
@@ -959,70 +962,69 @@ TCC84056000-ACX710-01 (Reference ID)
 
             let allFormsHtml = '';
             
-            // 將收件人資訊拆分以用於表格
-            const recipientLines = RECIPIENT_INFO.split(' ');
-            const toInfo = recipientLines[0].replace('To:', '').trim(); // UPS(Alex Kuo) 27908153#12
-            const toAddress = recipientLines.slice(1).join(' ').trim(); // 114 台北市內湖區民權東路六段 2 號 4 樓
+            // 直接使用常量
+            const toInfo = RECIPIENT_TO; 
+            const toAddress = RECIPIENT_ADDRESS; 
 
             items.forEach((item, index) => {
                 const productDescription = item.productDesc || (item.productID ? `${item.productID}, HW and OS` : 'N/A, HW and OS');
                 
                 const itemHtml = `
-                    <div class="shipping-form p-6 mb-8 bg-white" style="page-break-after: always; width: 100%; max-width: 800px; margin: 20px auto; border: 2px solid #333;">
+                    <div class="shipping-form p-6 mb-8 bg-white" style="page-break-after: always; width: 100%; max-width: 800px; margin: 20px auto; border: 2px solid #333; font-size: 16px;">
                         <h4 class="text-xl font-bold mb-4 border-b pb-2 text-indigo-700" style="font-size: 1.5rem; border-color: #3b82f6;">RMA 寄件明細 (${index + 1}/${items.length})</h4>
                         
-                        <!-- 1. 寄件人資訊 (單行區塊) -->
+                        <!-- 1. 寄件人資訊 (單行區塊) - 保持清晰可見 -->
                         <div class="mb-4 pb-2 border-b border-gray-400">
-                            <p class="text-base font-bold text-gray-800">${SENDER_INFO}</p>
+                            <p class="text-base font-bold text-gray-800" style="font-size: 16px;">${SENDER_INFO}</p>
                         </div>
                         
-                        <!-- 2. 收件人表格 -->
+                        <!-- 2. 收件人表格 - 強化字體 -->
                         <div class="mb-4 border border-black shipping-detail-table">
                             <table class="shipping-detail-table" style="width: 100%; border-collapse: collapse;">
                                 <thead>
                                     <tr>
-                                        <th style="width: 25%; background-color: #e5e5e5; border-color: #000;">TO:</th>
-                                        <td style="width: 75%; font-weight: bold; color: #cc0000; border-color: #000;">${toInfo}</td>
+                                        <th style="width: 25%; background-color: #e5e5e5; border-color: #000; font-size: 16px;">TO:</th>
+                                        <td style="width: 75%; font-weight: bold; color: #cc0000; border-color: #000; font-size: 18px;">${toInfo}</td>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     <tr>
-                                        <th style="width: 25%; background-color: #e5e5e5; border-color: #000;">地址:</th>
-                                        <td style="width: 75%; border-color: #000;">${toAddress}</td>
+                                        <th style="width: 25%; background-color: #e5e5e5; border-color: #000; font-size: 16px;">地址:</th>
+                                        <td style="width: 75%; border-color: #000; font-weight: bold; font-size: 16px;">${toAddress}</td>
                                     </tr>
                                 </tbody>
                             </table>
                         </div>
                         
-                        <!-- 3. RMA Details (明細表格) -->
+                        <!-- 3. RMA Details (明細表格) - 強化字體 -->
                         <div class="mt-4 border border-black shipping-detail-table">
                             <h5 class="font-bold p-2 text-base bg-gray-200 border-b border-black" style="font-size: 1.1rem; padding: 8px;">RMA Details</h5>
                             <table class="shipping-detail-table" style="width: 100%; border-collapse: collapse;">
                                 <tbody>
                                     <tr>
-                                        <th style="width: 40%; background-color: #f3f4f6; border-color: #000;">RMA Number:</th>
-                                        <td style="width: 60%; font-weight: bold; color: #d97706; border-color: #000;">${item.rmaNo || '【待填寫】'}</td>
+                                        <th style="width: 40%; background-color: #f3f4f6; border-color: #000; font-size: 16px;">RMA Number:</th>
+                                        <td style="width: 60%; font-weight: bold; color: #d97706; border-color: #000; font-size: 20px;">${item.rmaNo || '【待填寫】'}</td>
                                     </tr>
                                     <tr>
-                                        <th style="width: 40%; background-color: #f3f4f6; border-color: #000;">Defective Serial Number:</th>
-                                        <td style="width: 60%; border-color: #000;">${item.defectiveSn || 'N/A'}</td>
+                                        <th style="width: 40%; background-color: #f3f4f6; border-color: #000; font-size: 16px;">Defective Serial Number:</th>
+                                        <td style="width: 60%; border-color: #000; font-weight: bold; font-size: 18px;">${item.defectiveSn || 'N/A'}</td>
                                     </tr>
                                     <tr>
-                                        <th style="width: 40%; background-color: #f3f4f6; border-color: #000;">Defective Product ID:</th>
-                                        <td style="width: 60%; border-color: #000;">${item.productID || 'N/A'}</td>
+                                        <th style="width: 40%; background-color: #f3f4f6; border-color: #000; font-size: 16px;">Defective Product ID:</th>
+                                        <td style="width: 60%; border-color: #000; font-weight: bold; font-size: 18px;">${item.productID || 'N/A'}</td>
                                     </tr>
                                     <tr>
-                                        <th style="width: 40%; background-color: #f3f4f6; border-color: #000;">Defective Product Description:</th>
-                                        <td style="width: 60%; border-color: #000;">${productDescription}</td>
+                                        <th style="width: 40%; background-color: #f3f4f6; border-color: #000; font-size: 16px;">Defective Product Description:</th>
+                                        <td style="width: 60%; border-color: #000; font-weight: bold; font-size: 16px;">${productDescription}</td>
                                     </tr>
                                     <tr>
-                                        <th style="width: 40%; background-color: #f3f4f6; border-color: #000;">Service Level:</th>
-                                        <td style="width: 60%; border-color: #000;">${SERVICE_LEVEL}</td>
+                                        <th style="width: 40%; background-color: #f3f4f6; border-color: #000; font-size: 16px;">Service Level:</th>
+                                        <td style="width: 60%; border-color: #000; font-weight: bold; font-size: 16px;">${SERVICE_LEVEL}</td>
                                     </tr>
                                     ${item.notes ? 
                                     `<tr>
-                                        <th style="width: 40%; background-color: #f3f4f6; border-color: #000;">備註/問題描述:</th>
-                                        <td style="width: 60%; border-color: #000; white-space: pre-wrap;">${item.notes}</td>
+                                        <th style="width: 40%; background-color: #f3f4f6; border-color: #000; font-size: 16px;">備註/問題描述:</th>
+                                        <td style="width: 60%; border-color: #000; white-space: pre-wrap; font-weight: bold; font-size: 16px;">${item.notes}</td>
                                     </tr>`
                                     : ''}
                                 </tbody>
@@ -1064,6 +1066,11 @@ TCC84056000-ACX710-01 (Reference ID)
                         .shipping-detail-table { border: 1px solid #000 !important; }
                         .shipping-detail-table th, .shipping-detail-table td { border: 1px solid #000 !important; padding: 8px 10px; }
                         .shipping-form h4 { font-size: 1.2rem; }
+                        
+                        /* 強化列印字體大小和粗細 */
+                        .shipping-form p, .shipping-form td { font-size: 16px !important; font-weight: normal; }
+                        .shipping-form .large-bold { font-size: 20px !important; font-weight: bold !important; color: #d97706 !important; }
+                        .shipping-form .medium-bold { font-size: 18px !important; font-weight: bold !important; }
                     }
                     .shipping-form {
                         padding: 20px;
