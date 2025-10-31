@@ -257,7 +257,15 @@ TCC84056000-ACX710-01 (Reference ID)
         setLogLevel('debug');
 
         // --- Firebase 初始化與認證 ---
-        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        // 使用者提供的 Firebase 配置 (硬編碼)
+        const firebaseConfig = {
+            apiKey: "AIzaSyCODkFiLx1kbI9XfHGPPTP2TZ_WgDcBLX0",
+            authDomain: "rma-tool-b4b19.firebaseapp.com",
+            projectId: "rma-tool-b4b19",
+            storageBucket: "rma-tool-b4b19.firebasestorage.app",
+            messagingSenderId: "248478901007",
+            appId: "1:248478901007:web:a96bfd908ab18a1f4ed47a"
+        };
 
         if (Object.keys(firebaseConfig).length > 0) {
             const app = initializeApp(firebaseConfig);
@@ -385,12 +393,6 @@ TCC84056000-ACX710-01 (Reference ID)
             const confirmLoad = confirm(`確定要載入批次 "${targetDoc.split('(')[0].trim()}" 嗎？這將覆蓋當前編輯中的資料！`);
             if (!confirmLoad) return;
 
-            // 由於 onSnapshot 已經在上面監聽，我們只需要從 Firestore 抓取或解析即可
-            const q = query(collection(db, FIRESTORE_COLLECTION_PATH));
-            
-            // 由於 onSnapshot 是異步的，這裡快速重新跑一次快照，但更好的做法是直接讀取 doc
-            // 為了簡化，我們假設資料已經在 historyList 中了，但實際上我們應該從快照中找
-            
             // 這裡使用一個臨時快照讀取，確保我們拿到最新的資料
             const unsubscribe = onSnapshot(doc(db, FIRESTORE_COLLECTION_PATH, docId), (docSnapshot) => {
                 if (docSnapshot.exists()) {
