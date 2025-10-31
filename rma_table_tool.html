@@ -79,6 +79,21 @@
         .shipping-form h4 {
             border-bottom: 2px solid #3b82f6;
         }
+        /* 寄件表格內的表格樣式 */
+        .shipping-detail-table {
+            border: 1px solid #000;
+            border-collapse: collapse;
+            width: 100%;
+        }
+        .shipping-detail-table th, .shipping-detail-table td {
+            border: 1px solid #000;
+            padding: 8px 10px;
+            text-align: left;
+            font-size: 14px;
+        }
+        .shipping-detail-table th {
+            background-color: #f3f4f6;
+        }
     </style>
 </head>
 <body class="bg-gray-50 p-4 sm:p-8 font-sans">
@@ -936,43 +951,82 @@ TCC84056000-ACX710-01 (Reference ID)
             return { htmlTable: htmlTable.trim(), plaintextTable: plaintextOutput.trim() };
         }
         
-        // C. 寄件表格生成函數
+        // C. 寄件表格生成函數 (已修正為單據樣式)
         window.generateShippingForms = function(items) {
             if (items.length === 0) {
                 return '<p class="text-gray-500 italic">無 RMA 記錄可生成寄件表格。</p>';
             }
 
             let allFormsHtml = '';
+            
+            // 將收件人資訊拆分以用於表格
+            const recipientLines = RECIPIENT_INFO.split(' ');
+            const toInfo = recipientLines[0].replace('To:', '').trim(); // UPS(Alex Kuo) 27908153#12
+            const toAddress = recipientLines.slice(1).join(' ').trim(); // 114 台北市內湖區民權東路六段 2 號 4 樓
 
             items.forEach((item, index) => {
-                // 確定產品描述，如果產品 ID 存在但描述欄位為空，則使用預設描述
                 const productDescription = item.productDesc || (item.productID ? `${item.productID}, HW and OS` : 'N/A, HW and OS');
                 
                 const itemHtml = `
-                    <div class="shipping-form p-6 border border-gray-400 rounded-lg mb-8 bg-white shadow-lg" style="page-break-after: always; width: 100%; max-width: 800px; margin: 20px auto;">
-                        <h4 class="text-xl font-bold mb-4 border-b pb-2 text-indigo-700">RMA 寄件明細 (${index + 1}/${items.length})</h4>
+                    <div class="shipping-form p-6 mb-8 bg-white" style="page-break-after: always; width: 100%; max-width: 800px; margin: 20px auto; border: 2px solid #333;">
+                        <h4 class="text-xl font-bold mb-4 border-b pb-2 text-indigo-700" style="font-size: 1.5rem; border-color: #3b82f6;">RMA 寄件明細 (${index + 1}/${items.length})</h4>
                         
-                        <!-- 寄件/收件人資訊 -->
-                        <div class="border p-4 mb-4 bg-gray-50 rounded-md text-sm">
-                            <p class="font-bold mb-1">${SENDER_INFO}</p>
-                            <p class="font-bold text-red-700">${RECIPIENT_INFO}</p>
+                        <!-- 1. 寄件人資訊 (單行區塊) -->
+                        <div class="mb-4 pb-2 border-b border-gray-400">
+                            <p class="text-base font-bold text-gray-800">${SENDER_INFO}</p>
                         </div>
-
-                        <!-- 核心 RMA 資訊 -->
-                        <div class="space-y-3 text-lg">
-                            <p><strong>RMA Number:</strong> <span class="text-red-600 font-extrabold">${item.rmaNo || '【待填寫】'}</span></p>
-                            
-                            <div class="border-t border-gray-200 pt-3">
-                                <p><strong>Defective Serial Number:</strong> <span class="text-gray-900 font-bold">${item.defectiveSn || 'N/A'}</span></p>
-                                <p><strong>Defective Product ID:</strong> <span>${item.productID || 'N/A'}</span></p>
-                                <p><strong>Defective Product Description:</strong> <span>${productDescription}</span></p>
-                                <p><strong>Service Level:</strong> <span>${SERVICE_LEVEL}</span></p>
-                            </div>
-                            
-                            <div class="pt-3 mt-3 border-t border-gray-200">
-                                <p class="font-bold text-gray-700 mb-1">備註/問題描述 (Notes):</p>
-                                <div class="p-3 bg-yellow-50 border border-yellow-300 rounded-md whitespace-pre-wrap text-base">${item.notes || '無'}</div>
-                            </div>
+                        
+                        <!-- 2. 收件人表格 -->
+                        <div class="mb-4 border border-black shipping-detail-table">
+                            <table class="shipping-detail-table" style="width: 100%; border-collapse: collapse;">
+                                <thead>
+                                    <tr>
+                                        <th style="width: 25%; background-color: #e5e5e5; border-color: #000;">TO:</th>
+                                        <td style="width: 75%; font-weight: bold; color: #cc0000; border-color: #000;">${toInfo}</td>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <th style="width: 25%; background-color: #e5e5e5; border-color: #000;">地址:</th>
+                                        <td style="width: 75%; border-color: #000;">${toAddress}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        
+                        <!-- 3. RMA Details (明細表格) -->
+                        <div class="mt-4 border border-black shipping-detail-table">
+                            <h5 class="font-bold p-2 text-base bg-gray-200 border-b border-black" style="font-size: 1.1rem; padding: 8px;">RMA Details</h5>
+                            <table class="shipping-detail-table" style="width: 100%; border-collapse: collapse;">
+                                <tbody>
+                                    <tr>
+                                        <th style="width: 40%; background-color: #f3f4f6; border-color: #000;">RMA Number:</th>
+                                        <td style="width: 60%; font-weight: bold; color: #d97706; border-color: #000;">${item.rmaNo || '【待填寫】'}</td>
+                                    </tr>
+                                    <tr>
+                                        <th style="width: 40%; background-color: #f3f4f6; border-color: #000;">Defective Serial Number:</th>
+                                        <td style="width: 60%; border-color: #000;">${item.defectiveSn || 'N/A'}</td>
+                                    </tr>
+                                    <tr>
+                                        <th style="width: 40%; background-color: #f3f4f6; border-color: #000;">Defective Product ID:</th>
+                                        <td style="width: 60%; border-color: #000;">${item.productID || 'N/A'}</td>
+                                    </tr>
+                                    <tr>
+                                        <th style="width: 40%; background-color: #f3f4f6; border-color: #000;">Defective Product Description:</th>
+                                        <td style="width: 60%; border-color: #000;">${productDescription}</td>
+                                    </tr>
+                                    <tr>
+                                        <th style="width: 40%; background-color: #f3f4f6; border-color: #000;">Service Level:</th>
+                                        <td style="width: 60%; border-color: #000;">${SERVICE_LEVEL}</td>
+                                    </tr>
+                                    ${item.notes ? 
+                                    `<tr>
+                                        <th style="width: 40%; background-color: #f3f4f6; border-color: #000;">備註/問題描述:</th>
+                                        <td style="width: 60%; border-color: #000; white-space: pre-wrap;">${item.notes}</td>
+                                    </tr>`
+                                    : ''}
+                                </tbody>
+                            </table>
                         </div>
                     </div>
                 `;
@@ -987,7 +1041,7 @@ TCC84056000-ACX710-01 (Reference ID)
             const content = document.getElementById('shippingFormsOutput').innerHTML;
             
             if (rmaItems.length === 0) {
-                showCopyMessage('無 RMA 記錄可列印！', 'bg-red-600');
+                showCopyMessage('無 RMA 記錄可列印！', 'bg-red-600', 'printShippingBtn');
                 return;
             }
 
@@ -1001,7 +1055,15 @@ TCC84056000-ACX710-01 (Reference ID)
                     body { font-family: 'Inter', 'Microsoft JhengHei', sans-serif; margin: 0; padding: 0; background-color: white; }
                     /* 強制每一筆記錄列印在新的一頁 */
                     @media print {
-                        .shipping-form { page-break-after: always; }
+                        .shipping-form { 
+                            page-break-after: always; 
+                            border: 1px solid #000; /* 列印時確保邊框可見 */
+                            box-shadow: none; /* 列印時移除陰影 */
+                        }
+                        /* 確保內嵌表格的邊框列印出來 */
+                        .shipping-detail-table { border: 1px solid #000 !important; }
+                        .shipping-detail-table th, .shipping-detail-table td { border: 1px solid #000 !important; padding: 8px 10px; }
+                        .shipping-form h4 { font-size: 1.2rem; }
                     }
                     .shipping-form {
                         padding: 20px;
@@ -1017,9 +1079,22 @@ TCC84056000-ACX710-01 (Reference ID)
                         font-size: 1.2rem;
                         color: #1f2937;
                     }
-                    .shipping-form strong { font-weight: bold; }
-                    .shipping-form span { font-weight: normal; }
-                    .shipping-form .notes { white-space: pre-wrap; background: #f8f8f8; padding: 10px; border-radius: 4px; border: 1px solid #eee; }
+                    /* 寄件表格內的表格樣式 */
+                    .shipping-detail-table {
+                        border: 1px solid #000;
+                        border-collapse: collapse;
+                        width: 100%;
+                        margin-bottom: 15px;
+                    }
+                    .shipping-detail-table th, .shipping-detail-table td {
+                        border: 1px solid #000;
+                        padding: 8px 10px;
+                        text-align: left;
+                        font-size: 14px;
+                    }
+                    .shipping-detail-table th {
+                        background-color: #f3f4f6;
+                    }
                 </style>
             `);
             
@@ -1041,7 +1116,7 @@ TCC84056000-ACX710-01 (Reference ID)
             const outputElement = document.getElementById('shippingFormsOutput');
             
             if (rmaItems.length === 0) {
-                showCopyMessage('無內容可複製！請新增 RMA 記錄。', 'bg-red-600');
+                showCopyMessage('無內容可複製！請新增 RMA 記錄。', 'bg-red-600', 'copyShippingBtn');
                 return;
             }
             
