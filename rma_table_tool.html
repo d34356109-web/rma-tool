@@ -1,1229 +1,507 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RMA 表格生成工具 (網頁版)</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    fontFamily: {
-                        sans: ['Inter', 'Microsoft JhengHei', 'sans-serif'],
-                    },
-                }
-            }
-        }
-    </script>
-    <style>
-        /* 自定義 Tailwind 樣式 */
-        .container {
-            max-width: 1400px;
-            margin: auto;
-        }
-        .copied-message {
-            transition: opacity 0.3s ease-in-out;
-            opacity: 0;
-            z-index: 1000;
-        }
-        .copied-message.show {
-            opacity: 1;
-        }
-        /* 確保輸出表格的樣式能被郵件軟體識別 */
-        .table-output table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 0.9rem;
-        }
-        .table-output th, .table-output td {
-            border: 1px solid #e5e7eb;
-            padding: 10px 12px;
-            text-align: left;
-        }
-        .table-output th {
-            background-color: #f3f4f6;
-            font-weight: 600;
-            white-space: nowrap;
-        }
-        /* 輸入表格的樣式 */
-        .input-table td {
-            padding: 8px 10px;
-        }
-        .input-table input {
-            width: 100%;
-            padding: 6px;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-        }
-        .plaintext-output {
-            white-space: pre;
-            font-family: monospace;
-            padding: 1rem;
-            background-color: #f8f8f8;
-            border: 1px solid #ddd;
-            overflow-x: auto;
-            border-radius: 6px;
-        }
-        /* 寄件表格專用樣式 */
-        @media print {
-            .shipping-form { page-break-after: always; }
-        }
-        .shipping-form {
-            background-color: #ffffff;
-            border: 2px solid #ccc;
-            border-radius: 8px;
-            margin-bottom: 20px;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-        }
-        .shipping-form h4 {
-            border-bottom: 2px solid #3b82f6;
-        }
-        /* 寄件表格內的表格樣式 */
-        .shipping-detail-table {
-            border: 1px solid #000;
-            border-collapse: collapse;
-            width: 100%;
-        }
-        .shipping-detail-table th, .shipping-detail-table td {
-            border: 1px solid #000;
-            padding: 8px 10px;
-            text-align: left;
-            font-size: 14px;
-        }
-        .shipping-detail-table th {
-            background-color: #f3f4f6;
-        }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>小栗研究所 - 訂單管理系統</title>
+  
+  <!-- 載入 Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- 載入 Babel (用來讓瀏覽器看懂 React JSX 語法) -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  
+  <!-- 設定 React 與圖示套件的載入路徑 -->
+  <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@18.2.0",
+        "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+        "lucide-react": "https://esm.sh/lucide-react@0.292.0?external=react"
+      }
+    }
+  </script>
 </head>
-<body class="bg-gray-50 p-4 sm:p-8 font-sans">
-    <div id="app" class="container bg-white shadow-2xl rounded-xl p-6 md:p-10">
+<body class="bg-[#FDF8F5]">
+  <!-- React 系統會渲染在這個 div 裡面 -->
+  <div id="root"></div>
+
+  <!-- React 程式碼開始 -->
+  <script type="text/babel" data-type="module">
+    import React, { useState, useMemo, useEffect } from 'react';
+    import { createRoot } from 'react-dom/client';
+    import { Calculator, ShoppingBag, Trash2, JapaneseYen, Scale, Plane, User, FileText, PlusCircle, CheckCircle2, AlertCircle, Download, UploadCloud, Loader2 } from 'lucide-react';
+
+    // 定義特殊商品的固定價格表 (防呆：只能選這些，且自動算好台幣)
+    const GACHA_PRICES = {
+      300: 95,
+      400: 120,
+      500: 150,
+      800: 250
+    };
+
+    const OMAMORI_PRICES = {
+      300: 120, 500: 180, 600: 210, 700: 250, 
+      800: 280, 900: 320, 1000: 350, 1100: 390, 
+      1200: 420, 1300: 460, 1500: 530, 2000: 700
+    };
+
+    const SHIPPING_RATE_PER_KG = 190;
+
+    // ★ 請在此處貼上你部署後的 Google Apps Script Web App 網址 ★
+    const GOOGLE_SHEET_WEBAPP_URL = ""; 
+
+    const KoguriOrderSystem = () => {
+      const [orders, setOrders] = useState([]);
+      const [isSyncing, setIsSyncing] = useState(false);
+      const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
+      
+      const [formData, setFormData] = useState({
+        buyerName: '',
+        itemName: '',
+        category: '一般商品',
+        jpyPrice: '',
+        exchangeRate: 0.28,
+        weight: '',
+      });
+
+      const [errors, setErrors] = useState({});
+
+      const exchangeRateOptions = useMemo(() => {
+        const options = [];
+        for (let rate = 0.25; rate <= 0.30; rate += 0.005) {
+          options.push(rate.toFixed(3));
+        }
+        return options;
+      }, []);
+
+      const handleInputChange = (e) => {
+        const { name, value } = e.target;
+        let newValue = value;
+        let newFormData = { ...formData, [name]: newValue };
+
+        if (name === 'category') {
+          newFormData.jpyPrice = ''; 
+          newFormData.weight = '';
+          setErrors({}); 
+
+          if (newValue === '一番賞') {
+            newFormData.exchangeRate = 0.3; 
+          } else if (newValue === '一般商品' || newValue === '平台代標') {
+            newFormData.exchangeRate = 0.28; 
+          }
+        }
+
+        setFormData(newFormData);
+        if (errors[name]) {
+          setErrors(prev => ({ ...prev, [name]: null }));
+        }
+      };
+
+      const calculation = useMemo(() => {
+        let twdPrice = 0;
+        let shippingFee = 0;
+        const jpy = parseFloat(formData.jpyPrice) || 0;
+        const weight = parseFloat(formData.weight) || 0;
+        const rate = parseFloat(formData.exchangeRate);
+
+        if (formData.category === '扭蛋') {
+          twdPrice = GACHA_PRICES[jpy] || 0;
+          shippingFee = 0;
+        } else if (formData.category === '神社御守') {
+          twdPrice = OMAMORI_PRICES[jpy] || 0;
+          shippingFee = 0;
+        } else if (formData.category === '一番賞') {
+          twdPrice = Math.ceil(jpy * 0.3);
+          shippingFee = Math.ceil(weight * SHIPPING_RATE_PER_KG);
+        } else {
+          twdPrice = Math.ceil(jpy * rate);
+          shippingFee = Math.ceil(weight * SHIPPING_RATE_PER_KG);
+        }
+
+        return {
+          twdPrice,
+          shippingFee,
+          total: twdPrice + shippingFee
+        };
+      }, [formData]);
+
+      const validateForm = () => {
+        const newErrors = {};
+        if (!formData.buyerName.trim()) newErrors.buyerName = '請填寫訂購人名稱';
+        if (!formData.jpyPrice) newErrors.jpyPrice = '請填寫或選擇日幣金額';
+        if (formData.jpyPrice <= 0) newErrors.jpyPrice = '金額必須大於 0';
         
-        <h1 class="text-3xl font-bold text-gray-800 mb-2">RMA 換貨/維修表格生成工具</h1>
-        <p class="text-gray-600 mb-4">管理多筆 RMA 記錄，並生成郵件 (HTML) 及 Excel (純文字) 表格。</p>
+        const needsWeight = ['一般商品', '一番賞', '平台代標'].includes(formData.category);
+        if (needsWeight && (!formData.weight || formData.weight <= 0)) {
+          newErrors.weight = '請填寫正確的商品重量';
+        }
 
-        <!-- Firebase 狀態顯示 -->
-        <div id="authStatus" class="mb-6 p-3 bg-indigo-50 border border-indigo-200 rounded-lg text-sm text-indigo-700 flex items-center justify-between">
-            <span id="loadingMessage">
-                <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-indigo-500 inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                正在載入服務...
-            </span>
-            <span id="userInfo" class="font-semibold hidden"></span>
-        </div>
+        setErrors(newErrors);
+        return Object.keys(newErrors).length === 0;
+      };
 
-        <!-- 輸入控制區塊 -->
-        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 p-4 rounded-lg bg-yellow-50 border border-yellow-200 gap-4">
-            <h2 class="text-xl font-semibold text-gray-700">① 管理 RMA 記錄</h2>
-            <div class="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
-                <button onclick="showPasteModal()" 
-                    class="flex items-center justify-center px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition duration-150 shadow-md whitespace-nowrap">
-                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 13h6m-3-3v6m-9 1 12 12-12-12z"></path></svg>
-                    貼上標準 RMA 文本
-                </button>
-                <button onclick="showExchangeModal()" 
-                    class="flex items-center justify-center px-4 py-2 bg-pink-600 text-white text-sm font-medium rounded-lg hover:bg-pink-700 transition duration-150 shadow-md whitespace-nowrap">
-                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
-                    貼上換貨資訊 (新舊序號/備註)
-                </button>
-                <button onclick="addItem()" 
-                    class="flex items-center justify-center px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition duration-150 shadow-md whitespace-nowrap">
-                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
-                    新增一筆空白資料
-                </button>
-            </div>
-        </div>
+      const showToast = (message, type = 'success') => {
+        setToast({ show: true, message, type });
+        setTimeout(() => setToast({ show: false, message: '', type: 'success' }), 3000);
+      };
 
-        <!-- 資料儲存與歷史記錄控制 -->
-        <div id="dataControl" class="flex flex-col sm:flex-row justify-between items-center mb-8 p-4 rounded-lg bg-gray-100 border border-gray-300 gap-4 hidden">
-            <button onclick="showHistoryModal()" id="loadBtn"
-                class="flex items-center justify-center px-4 py-2 bg-gray-600 text-white text-sm font-medium rounded-lg hover:bg-gray-700 transition duration-150 shadow-md whitespace-nowrap">
-                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m15.356 2H20M4 12v5h.582m15.356 2A8.001 8.001 0 004.582 9m15.356 2H20"></path></svg>
-                載入歷史 RMA 批次
-            </button>
-            <div class="flex gap-2 items-center w-full sm:w-auto">
-                <input type="text" id="batchNameInput" placeholder="輸入批次名稱 (例如: 10月31日批次)" class="p-2 border rounded-lg flex-grow">
-                <button onclick="saveCurrentBatch()" id="saveBtn"
-                    class="flex items-center justify-center px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 transition duration-150 shadow-md whitespace-nowrap">
-                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-3 0V4a2 2 0 00-2-2H9a2 2 0 00-2 2v3m7 0h-3"></path></svg>
-                    儲存當前批次
-                </button>
-            </div>
-        </div>
-
-
-        <!-- RMA 列表輸入區 -->
-        <div id="rmaListContainer" class="mb-10 overflow-x-auto shadow-lg rounded-lg border">
-            <!-- Dynamic RMA items will be rendered here -->
-            <div class="p-6 text-center text-gray-500 italic" id="emptyListMessage">
-                目前沒有 RMA 記錄，請點擊上方按鈕新增資料。
-            </div>
-        </div>
-
-
-        <!-- 輸出區塊 -->
-        <div id="outputSection" class="border-t pt-8">
-            <h2 class="text-2xl font-bold text-gray-800 mb-6">② 生成結果 (<span id="itemCount">0</span> 筆記錄)</h2>
-
-            <!-- HTML Table 輸出 (用於郵件) -->
-            <div class="mb-8 p-4 border rounded-lg bg-white shadow-md">
-                <h3 class="text-xl font-semibold text-gray-700 mb-4 flex justify-between items-center">
-                    A. HTML 表格 (用於郵件)
-                    <button onclick="copyTableContent('html')" id="copyHtmlBtn"
-                        class="flex items-center px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition duration-150 shadow-md">
-                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2v-2m-6-13l-4 4m0 0l4 4m-4-4h12"></path></svg>
-                        複製 HTML 表格
-                    </button>
-                </h3>
-                <div id="htmlTableOutput" class="overflow-x-auto table-output">
-                    <p class="text-gray-500 italic">請新增 RMA 記錄以生成表格。</p>
-                </div>
-            </div>
-
-            <!-- Plaintext Table 輸出 (用於 Excel 貼上) -->
-            <div class="mb-8 p-4 border rounded-lg bg-white shadow-md">
-                <h3 class="text-xl font-semibold text-gray-700 mb-4 flex justify-between items-center">
-                    B. 純文字表格 (用於 Excel/試算表貼上)
-                    <button onclick="copyTableContent('plaintext')" id="copyPlaintextBtn"
-                        class="flex items-center px-4 py-2 bg-purple-600 text-white text-sm font-medium rounded-lg hover:bg-purple-700 transition duration-150 shadow-md">
-                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2v-2m-6-13l-4 4m0 0l4 4m-4-4h12"></path></svg>
-                        複製純文字表格
-                    </button>
-                </h3>
-                <pre id="plaintextTableOutput" class="plaintext-output">
-請新增 RMA 記錄以生成表格。
-                </pre>
-            </div>
-            
-            <!-- Output Section C (Shipping Forms) -->
-            <div class="mb-8 p-4 border rounded-lg bg-white shadow-md">
-                <h3 class="text-xl font-semibold text-gray-700 mb-4 flex justify-between items-center">
-                    C. 寄件用表格 (列印 / Word 匯出用)
-                    <div class="flex gap-2">
-                        <button onclick="printShippingForms()" id="printShippingBtn"
-                            class="flex items-center px-4 py-2 bg-yellow-600 text-white text-sm font-medium rounded-lg hover:bg-yellow-700 transition duration-150 shadow-md">
-                            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m0 0v-4m0 4h2m4 0h2m4 0h2m-4 0v-4m-4 4h2m4 0h2m-4 0v-4"></path></svg>
-                            列印所有表格
-                        </button>
-                        <button onclick="copyShippingForms()" id="copyShippingBtn"
-                            class="flex items-center px-4 py-2 bg-orange-600 text-white text-sm font-medium rounded-lg hover:bg-orange-700 transition duration-150 shadow-md">
-                            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2v-2m-6-13l-4 4m0 0l4 4m-4-4h12"></path></svg>
-                            複製所有表格 (Word)
-                        </button>
-                    </div>
-                </h3>
-                <div id="shippingFormsOutput" class="overflow-x-auto">
-                    <p class="text-gray-500 italic">請新增 RMA 記錄以生成寄件表格。</p>
-                </div>
-            </div>
-
-        </div>
-
-        <!-- 貼上標準 RMA 文本 Modal -->
-        <div id="pasteModal" class="fixed inset-0 bg-gray-900 bg-opacity-75 hidden items-center justify-center p-4 z-50">
-            <div class="bg-white rounded-xl shadow-2xl p-6 w-full max-w-lg">
-                <h3 class="text-2xl font-bold mb-4 text-indigo-700">貼上標準 RMA 資訊文本 (單筆)</h3>
-                <textarea id="modalRmaInput" rows="8"
-                    class="w-full p-3 border border-indigo-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 text-gray-700 placeholder-gray-400 mb-4"
-                    placeholder="例如：
-RMA Number: R200591359
-Defective Serial Number: TU8SA68128
-Defective Product ID: ACX710DC
-..."></textarea>
-                <div class="flex justify-end gap-3">
-                    <button onclick="hidePasteModal()" class="px-4 py-2 bg-gray-300 rounded-lg hover:bg-gray-400 transition">
-                        取消
-                    </button>
-                    <button onclick="extractAndAddItem('standard')" class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition">
-                        解析並新增記錄
-                    </button>
-                </div>
-            </div>
-        </div>
-
-        <!-- 貼上換貨資訊 Modal -->
-        <div id="exchangeModal" class="fixed inset-0 bg-gray-900 bg-opacity-75 hidden items-center justify-center p-4 z-50">
-            <div class="bg-white rounded-xl shadow-2xl p-6 w-full max-w-lg">
-                <h3 class="text-2xl font-bold mb-4 text-pink-700">貼上換貨資訊 (新舊序號/備註)</h3>
-                <textarea id="modalExchangeInput" rows="8"
-                    class="w-full p-3 border border-pink-300 rounded-lg focus:ring-pink-500 focus:border-pink-500 text-gray-700 placeholder-gray-400 mb-4"
-                    placeholder="請貼上類似以下格式的內容：
-
-TCC84056000-ACX710-01 (Reference ID)
-舊序號: TU8SA79237 或 old: TU8SA79237
-新序號: TU8SB95388 或 new: TU8SB95388
-備註：TCC84056000-ACX710-01 PEM 0 Feed B Not OK
-"></textarea>
-                <div class="flex justify-end gap-3">
-                    <button onclick="hideExchangeModal()" class="px-4 py-2 bg-gray-300 rounded-lg hover:bg-gray-400 transition">
-                        取消
-                    </button>
-                    <button onclick="extractAndAddItem('exchange')" class="px-4 py-2 bg-pink-600 text-white rounded-lg hover:bg-pink-700 transition">
-                        解析並新增記錄
-                    </button>
-                </div>
-            </div>
-        </div>
+      const handleAddOrder = (e) => {
+        e.preventDefault();
         
-        <!-- 歷史記錄 Modal -->
-        <div id="historyModal" class="fixed inset-0 bg-gray-900 bg-opacity-75 hidden items-center justify-center p-4 z-50">
-            <div class="bg-white rounded-xl shadow-2xl p-6 w-full max-w-2xl max-h-[80vh] overflow-y-auto">
-                <h3 class="text-2xl font-bold mb-4 text-gray-700">歷史 RMA 批次記錄</h3>
-                <div id="historyList" class="space-y-3">
-                    <p class="text-gray-500 italic">正在載入歷史記錄...</p>
-                </div>
-                <div class="flex justify-end gap-3 mt-6">
-                    <button onclick="hideHistoryModal()" class="px-4 py-2 bg-gray-300 rounded-lg hover:bg-gray-400 transition">
-                        關閉
-                    </button>
-                </div>
-            </div>
-        </div>
+        if (!validateForm()) {
+          showToast('表單資料有誤，請檢查紅色提示欄位', 'error');
+          return;
+        }
 
-        <!-- 批次詳情 Modal -->
-        <div id="batchDetailModal" class="fixed inset-0 bg-gray-900 bg-opacity-75 hidden items-center justify-center p-4 z-50">
-            <div class="bg-white rounded-xl shadow-2xl p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
-                <h3 class="text-2xl font-bold mb-4 text-gray-700">批次詳情: <span id="detailBatchName" class="text-indigo-600"></span></h3>
-                <div id="detailBatchContent" class="mb-4 overflow-x-auto table-output">
-                    <p class="text-gray-500 italic">載入中...</p>
-                </div>
-                <div class="flex justify-between items-center mt-6 border-t pt-4">
-                    <button onclick="loadBatchToEditor()" id="detailLoadBtn"
-                        class="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition">
-                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-                        載入至編輯區 (將覆蓋當前資料)
-                    </button>
-                    <button onclick="hideBatchDetailModal()" class="px-4 py-2 bg-gray-300 rounded-lg hover:bg-gray-400 transition">
-                        關閉
-                    </button>
-                </div>
-            </div>
-        </div>
-
-        <!-- 複製成功提示 -->
-        <div id="copiedMsg" class="copied-message fixed bottom-4 right-4 bg-gray-800 text-white px-5 py-3 rounded-xl shadow-2xl">
-            已成功複製到剪貼簿！
-        </div>
-
-    </div>
-
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, deleteDoc, doc, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
-        // 全局狀態：儲存所有 RMA 記錄的陣列
-        let rmaItems = [];
-        let db, auth;
-        let userId = 'anonymous'; 
-        let isAuthReady = false;
-        // 用於在詳情視窗和載入功能之間傳遞選定的歷史批次資料
-        let currentDetailBatchRecords = null; 
-        
-        // Firestore 集合路徑
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const FIRESTORE_COLLECTION_PATH = `/artifacts/${appId}/public/data/rma_batches`;
-        
-        // --- 寄件表格固定資訊 (START) ---
-        // 這些資訊通常是固定的，請根據您的實際情況修改以下內容：
-        const SENDER_INFO = "From: 806-60 高雄市前鎮區中山二路 2 號 11 樓之 1 室 (王信傑 0986-751-710)";
-        // 使用者確認的 TO 資訊
-        const RECIPIENT_TO = "UPS(Alex Kuo) 27908153#12"; 
-        const RECIPIENT_ADDRESS = "114 台北市內湖區民權東路六段 2 號 4 樓";
-        const RECIPIENT_INFO = `To: ${RECIPIENT_TO} ${RECIPIENT_ADDRESS}`;
-        const SERVICE_LEVEL = "RETURN TO FACTORY REPAIR OR REPLACE";
-        // --- 寄件表格固定資訊 (END) ---
-
-        // 錯誤日誌
-        setLogLevel('debug');
-
-        // --- Firebase 初始化與認證 ---
-        // 使用者提供的 Firebase 配置 (硬編碼)
-        const firebaseConfig = {
-            apiKey: "AIzaSyCODkFiLx1kbI9XfHGPPTP2TZ_WgDcBLX0",
-            authDomain: "rma-tool-b4b19.firebaseapp.com",
-            projectId: "rma-tool-b4b19",
-            storageBucket: "rma-tool-b4b19.firebasestorage.app",
-            messagingSenderId: "248478901007",
-            appId: "1:248478901007:web:a96bfd908ab18a1f4ed47a"
+        const newOrder = {
+          id: Date.now().toString(),
+          ...formData,
+          jpyPrice: parseFloat(formData.jpyPrice),
+          weight: parseFloat(formData.weight) || 0,
+          twdPrice: calculation.twdPrice,
+          shippingFee: calculation.shippingFee,
+          totalPrice: calculation.total,
+          date: new Date().toLocaleDateString('zh-TW', { month: '2-digit', day: '2-digit', hour: '2-digit', minute:'2-digit' })
         };
 
-        if (Object.keys(firebaseConfig).length > 0) {
-            const app = initializeApp(firebaseConfig);
-            db = getFirestore(app);
-            auth = getAuth(app);
+        setOrders([newOrder, ...orders]);
+        showToast(`成功新增 ${formData.buyerName} 的訂單！`);
+        
+        setFormData(prev => ({
+          ...prev,
+          buyerName: '',
+          itemName: '',
+          jpyPrice: '',
+          weight: ''
+        }));
+      };
 
-            onAuthStateChanged(auth, async (user) => {
-                const loadingMsg = document.getElementById('loadingMessage');
-                const userInfo = document.getElementById('userInfo');
-                const dataControl = document.getElementById('dataControl');
+      const handleDeleteOrder = (id) => {
+        setOrders(orders.filter(order => order.id !== id));
+        showToast('已刪除一筆訂單', 'success');
+      };
 
-                if (user) {
-                    userId = user.uid;
-                    isAuthReady = true;
-                    loadingMsg.textContent = '服務已載入。';
-                    userInfo.textContent = `使用者 ID: ${userId}`;
-                    userInfo.classList.remove('hidden');
-                    dataControl.classList.remove('hidden');
-                    console.log("Firebase initialized and user authenticated:", userId);
-                    loadHistoryListener(); // 監聽歷史記錄
-                } else {
-                    // 總是嘗試匿名登入 (最穩定的方法)
-                    try {
-                        await signInAnonymously(auth);
-                    } catch (error) {
-                        console.error("Authentication failed:", error);
-                        // 修正後的錯誤提示：明確指示檢查匿名登入設定
-                        loadingMsg.textContent = `認證失敗，功能受限。請檢查 Firebase Console 中的「Authentication (匿名登入)」設定是否已啟用。錯誤碼: ${error.code || '未知'}`;
-                        loadingMsg.classList.add('text-red-700');
-                        isAuthReady = true;
-                        dataControl.classList.add('hidden'); // 隱藏儲存功能
-                    }
-                }
-            });
-        } else {
-            console.error("Firebase config is missing.");
-            document.getElementById('loadingMessage').textContent = 'Firebase 配置遺失，資料儲存功能無法使用。';
-            isAuthReady = true; // 允許應用程式的其他部分運行
+      const handleExportCSV = () => {
+        if (orders.length === 0) {
+          showToast('目前沒有訂單可以匯出', 'error');
+          return;
         }
         
-        // --- MODAL 顯示/隱藏函數 ---
-        window.showPasteModal = function() {
-            document.getElementById('pasteModal').style.display = 'flex';
-            document.getElementById('modalRmaInput').value = ''; 
-        }
-
-        window.hidePasteModal = function() {
-            document.getElementById('pasteModal').style.display = 'none';
-        }
-
-        window.showExchangeModal = function() {
-            document.getElementById('exchangeModal').style.display = 'flex';
-            document.getElementById('modalExchangeInput').value = ''; 
-        }
-
-        window.hideExchangeModal = function() {
-            document.getElementById('exchangeModal').style.display = 'none';
-        }
+        const headers = ['訂單編號', '登記時間', '訂購人', '分類', '商品名稱', '日幣原價', '匯率', '重量(kg)', '國際運費', '應收台幣'];
         
-        window.showHistoryModal = function() {
-            document.getElementById('historyModal').style.display = 'flex';
-        }
+        const csvContent = [
+          headers.join(','),
+          ...orders.map(o => [
+            o.id,
+            `"${o.date}"`,
+            `"${o.buyerName}"`,
+            o.category,
+            `"${o.itemName || ''}"`,
+            o.jpyPrice,
+            ['扭蛋', '神社御守'].includes(o.category) ? '固定價格' : o.exchangeRate,
+            o.weight || 0,
+            o.shippingFee,
+            o.totalPrice
+          ].join(','))
+        ].join('\n');
 
-        window.hideHistoryModal = function() {
-            document.getElementById('historyModal').style.display = 'none';
-        }
+        const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        const url = URL.createObjectURL(blob);
         
-        window.showBatchDetailModal = function() {
-            document.getElementById('batchDetailModal').style.display = 'flex';
+        link.setAttribute('href', url);
+        link.setAttribute('download', `小栗研究所_訂單匯出_${new Date().toISOString().slice(0,10)}.csv`);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        showToast('已成功下載 CSV 試算表！');
+      };
+
+      const handleSyncToSheets = async () => {
+        if (orders.length === 0) {
+          showToast('沒有可同步的訂單資料', 'error');
+          return;
         }
-        
-        window.hideBatchDetailModal = function() {
-            document.getElementById('batchDetailModal').style.display = 'none';
-            currentDetailBatchRecords = null; // 清空緩存
-        }
-
-
-        // --- 資料庫操作功能 ---
-
-        // 儲存當前的 RMA 批次到 Firestore
-        window.saveCurrentBatch = async function() {
-            if (!isAuthReady || rmaItems.length === 0) {
-                alert('請先登入或新增 RMA 記錄才能儲存。');
-                return;
-            }
-
-            const batchNameInput = document.getElementById('batchNameInput');
-            let batchName = batchNameInput.value.trim() || `RMA 批次 - ${new Date().toLocaleString('zh-TW', { dateStyle: 'short', timeStyle: 'short' })}`;
-
-            if (!batchName) return;
-
-            try {
-                const docRef = await addDoc(collection(db, FIRESTORE_COLLECTION_PATH), {
-                    userId: userId,
-                    name: batchName,
-                    timestamp: Date.now(),
-                    // 將整個 RMA 陣列序列化為 JSON 字串以便安全儲存
-                    records: JSON.stringify(rmaItems), 
-                });
-                
-                // 儲存成功後清空畫面
-                rmaItems = []; 
-                renderRmaItems(); 
-
-                showCopyMessage(`批次 "${batchName}" (ID: ${docRef.id.substring(0, 4)}...) 儲存成功！`, 'bg-green-600', 'saveBtn');
-                batchNameInput.value = ''; // 清空名稱輸入框
-            } catch (e) {
-                console.error("Error adding document: ", e);
-                showCopyMessage("儲存失敗：請檢查網路或權限。", 'bg-red-600', 'saveBtn');
-            }
+        if (!GOOGLE_SHEET_WEBAPP_URL) {
+          showToast('尚未設定 Google Sheets 網址，請參考說明進行設定', 'error');
+          return;
         }
 
-        // 監聽歷史記錄 (只負責載入列表)
-        function loadHistoryListener() {
-            if (!isAuthReady) return;
+        setIsSyncing(true);
+        try {
+          const response = await fetch(GOOGLE_SHEET_WEBAPP_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify(orders),
+          });
 
-            const q = query(collection(db, FIRESTORE_COLLECTION_PATH), orderBy("timestamp", "desc"));
-            
-            onSnapshot(q, (snapshot) => {
-                const historyList = document.getElementById('historyList');
-                historyList.innerHTML = '';
-                
-                if (snapshot.empty) {
-                    historyList.innerHTML = '<p class="text-gray-500 italic">目前沒有歷史批次記錄。</p>';
-                    return;
-                }
-
-                snapshot.docs.forEach(doc => {
-                    const data = doc.data();
-                    const date = new Date(data.timestamp).toLocaleString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
-                    // 使用 try-catch 處理 JSON 解析錯誤
-                    let recordCount = 0;
-                    try {
-                         recordCount = JSON.parse(data.records).length;
-                    } catch (e) {
-                        console.error("Error parsing records count:", e);
-                    }
-
-
-                    const itemHtml = `
-                        <div class="flex justify-between items-center p-3 border rounded-lg bg-white shadow-sm hover:bg-gray-50">
-                            <div>
-                                <p class="font-semibold text-gray-800">${data.name} (<span class="text-xs text-gray-500">${recordCount} 筆記錄</span>)</p>
-                                <p class="text-xs text-gray-500">儲存者: ${data.userId.substring(0, 8)}... | 時間: ${date}</p>
-                            </div>
-                            <div class="flex gap-2">
-                                <button onclick="fetchAndShowBatchDetails('${doc.id}')" class="px-3 py-1 bg-indigo-500 text-white text-sm rounded-lg hover:bg-indigo-600 transition whitespace-nowrap">
-                                    檢視詳情
-                                </button>
-                                <button onclick="deleteBatch('${doc.id}', '${data.userId}')" class="px-3 py-1 bg-red-500 text-white text-sm rounded-lg hover:bg-red-600 transition">
-                                    刪除
-                                </button>
-                            </div>
-                        </div>
-                    `;
-                    historyList.innerHTML += itemHtml;
-                });
-            }, (error) => {
-                console.error("Error listening to history:", error);
-                document.getElementById('historyList').innerHTML = '<p class="text-red-500 italic">載入歷史記錄失敗。</p>';
-            });
+          const result = await response.json();
+          if (result.status === 'success') {
+            showToast(`成功將 ${result.count} 筆訂單同步至 Google 試算表！`);
+          } else {
+            throw new Error(result.message);
+          }
+        } catch (error) {
+          console.error('Sync error:', error);
+          showToast('同步失敗，請確認 Google Sheet URL 是否正確設定', 'error');
+        } finally {
+          setIsSyncing(false);
         }
+      };
 
-        // 獲取並顯示批次詳情 (非破壞性操作)
-        window.fetchAndShowBatchDetails = function(docId) {
-            // 隱藏歷史清單
-            hideHistoryModal(); 
-            
-            const detailContent = document.getElementById('detailBatchContent');
-            detailContent.innerHTML = '<p class="text-gray-500 italic p-4 text-center">載入中...</p>';
+      const summary = useMemo(() => {
+        return orders.reduce((acc, order) => {
+          acc.totalJpy += order.jpyPrice;
+          acc.totalTwd += order.twdPrice;
+          acc.totalShipping += order.shippingFee;
+          acc.totalRevenue += order.totalPrice;
+          return acc;
+        }, { totalJpy: 0, totalTwd: 0, totalShipping: 0, totalRevenue: 0 });
+      }, [orders]);
 
-            // 這裡使用一個臨時快照讀取，確保我們拿到最新的資料
-            const unsubscribe = onSnapshot(doc(db, FIRESTORE_COLLECTION_PATH, docId), (docSnapshot) => {
-                unsubscribe(); // 讀取一次後立即停止監聽
-                
-                if (docSnapshot.exists()) {
-                    const data = docSnapshot.data();
-                    document.getElementById('detailBatchName').textContent = data.name;
-                    
-                    try {
-                        // 解析記錄並儲存到全局變數，以供載入功能使用
-                        const records = JSON.parse(data.records);
-                        currentDetailBatchRecords = records;
-                        
-                        // 渲染唯讀表格
-                        detailContent.innerHTML = renderBatchDetailTable(records);
+      return (
+        <div className="min-h-screen p-4 md:p-8 font-sans text-slate-700 relative">
+          {toast.show && (
+            <div className={`fixed top-4 right-4 z-50 flex items-center p-4 rounded-lg shadow-lg text-white transition-all duration-300 transform translate-y-0 ${toast.type === 'error' ? 'bg-red-500' : 'bg-emerald-500'}`}>
+              {toast.type === 'error' ? <AlertCircle className="w-5 h-5 mr-2" /> : <CheckCircle2 className="w-5 h-5 mr-2" />}
+              <span className="font-medium tracking-wide">{toast.message}</span>
+            </div>
+          )}
 
-                        // 顯示詳情視窗
-                        showBatchDetailModal();
+          <header className="max-w-7xl mx-auto mb-8 text-center flex flex-col items-center">
+            <div className="bg-white p-4 rounded-full shadow-sm mb-4 inline-block border-2 border-pink-100 relative">
+              <ShoppingBag className="w-10 h-10 text-[#7FB5B5]" />
+              <div className="absolute -top-1 -right-1 bg-pink-400 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow">PRO</div>
+            </div>
+            <h1 className="text-3xl font-bold text-[#5c7a99] mb-2 tracking-wider">🐾 小栗研究所 Koguri Kenkyujo 🌸</h1>
+            <p className="text-pink-400 font-medium tracking-widest text-sm bg-pink-50 px-4 py-1 rounded-full">專業版訂單管理試算系統 (含防呆機制)</p>
+          </header>
 
-                    } catch (e) {
-                        console.error("Error parsing records:", e);
-                        detailContent.innerHTML = '<p class="text-red-500 italic p-4 text-center">載入失敗：資料格式錯誤。</p>';
-                        showBatchDetailModal();
-                    }
-                } else {
-                    detailContent.innerHTML = '<p class="text-red-500 italic p-4 text-center">載入失敗：批次不存在。</p>';
-                    showBatchDetailModal();
-                }
-            });
-        }
+          <div className="max-w-7xl mx-auto grid grid-cols-1 xl:grid-cols-12 gap-6">
+            <div className="xl:col-span-4 bg-white rounded-2xl shadow-sm border border-pink-100 overflow-hidden flex flex-col h-fit">
+              <div className="bg-[#fde8e8] px-6 py-4 border-b border-pink-100 flex items-center justify-between">
+                <div className="flex items-center">
+                  <PlusCircle className="w-5 h-5 text-pink-500 mr-2" />
+                  <h2 className="text-lg font-bold text-pink-700">新增登記</h2>
+                </div>
+              </div>
+              
+              <form onSubmit={handleAddOrder} className="p-6 space-y-5">
+                <div className="space-y-4">
+                  <div>
+                    <label className="flex items-center text-sm font-semibold text-gray-600 mb-1">
+                      <ShoppingBag className="w-4 h-4 mr-1 text-[#7FB5B5]" /> 商品分類 (影響計價公式)
+                    </label>
+                    <select name="category" value={formData.category} onChange={handleInputChange} className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-400 bg-gray-50 text-gray-700 font-medium">
+                      <option value="一般商品">一般商品 (生活/食品/雜貨)</option>
+                      <option value="扭蛋">扭蛋 (固定價格/免填運費)</option>
+                      <option value="神社御守">神社/御守 (固定價格/免填運費)</option>
+                      <option value="一番賞">一番賞 (固定0.3匯率+運費)</option>
+                      <option value="平台代標">平台代標 (Mercari/日拍)</option>
+                    </select>
+                  </div>
 
-        // 渲染唯讀批次詳情表格
-        function renderBatchDetailTable(items) {
-             let bodyHtml = '';
-            const thStyle = "border: 1px solid #e5e7eb; padding: 10px 12px; text-align: left; background-color: #f3f4f6; font-weight: 600;";
-            const tdStyle = "border: 1px solid #e5e7eb; padding: 10px 12px; text-align: left;";
-            const tdSnStyle = "border: 1px solid #e5e7eb; padding: 10px 12px; text-align: left; font-weight: bold; color: #10B981;"; 
-            const tdTrackStyle = "border: 1px solid #e5e7eb; padding: 10px 12px; text-align: left; font-weight: bold; color: #3B82F6;"; 
-
-            items.forEach((item, index) => {
-                let displayNotes = item.notes.trim() || 'N/A';
-
-                bodyHtml += `
-                    <tr>
-                        <td style="${tdStyle}">${index + 1}</td>
-                        <td style="${tdStyle}">${item.rmaNo || 'N/A'}</td>
-                        <td style="${tdStyle}">${item.productID || 'N/A'}</td>
-                        <td style="${tdStyle}">${item.defectiveSn || 'N/A'}</td>
-                        <td style="${tdSnStyle}">${item.replacementSn || '【待確認】'}</td>
-                        <td style="${tdStyle}">${displayNotes}</td>
-                        <td style="${tdTrackStyle}">${item.trackingNumber || '【待填寫】'}</td>
-                    </tr>
-                `;
-            });
-
-            const tableStyle = "width: 100%; border-collapse: collapse; font-size: 0.9rem; font-family: 'Inter', 'Microsoft JhengHei', sans-serif;";
-            
-            return `
-                <table style="${tableStyle}">
-                    <thead>
-                        <tr>
-                            <th style="${thStyle}" class="w-10">#</th>
-                            <th style="${thStyle}">RMA</th>
-                            <th style="${thStyle}">設備型號</th>
-                            <th style="${thStyle}">換下序號 (Def. SN)</th>
-                            <th style="${thStyle}">換上序號 (Rep. SN)</th>
-                            <th style="${thStyle}">備註 (Notes)</th>
-                            <th style="${thStyle}">貨運單號</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${bodyHtml.trim()}
-                    </tbody>
-                </table>
-            `;
-        }
-
-        // 載入指定的批次記錄到當前編輯器 (點擊詳情視窗中的載入按鈕時觸發)
-        window.loadBatchToEditor = function() {
-            if (!currentDetailBatchRecords) {
-                showCopyMessage('載入失敗：未選擇有效的批次。', 'bg-red-600');
-                return;
-            }
-
-            const confirmLoad = confirm('確定要載入此批次嗎？這將覆蓋您當前編輯中的所有資料！');
-            if (!confirmLoad) return;
-
-            // 賦值並刷新 UI
-            rmaItems = currentDetailBatchRecords; 
-            renderRmaItems();
-            hideBatchDetailModal();
-            showCopyMessage(`批次 "${document.getElementById('detailBatchName').textContent}" 載入成功！`, 'bg-indigo-600');
-            currentDetailBatchRecords = null; // 清理全局變數
-        }
-        
-        // 刪除指定的批次記錄
-        window.deleteBatch = async function(docId, ownerId) {
-            if (userId !== ownerId) {
-                alert('您只能刪除您自己儲存的批次記錄。');
-                return;
-            }
-
-            const confirmDelete = confirm('確定要永久刪除這筆歷史記錄嗎？');
-            if (!confirmDelete) return;
-
-            try {
-                await deleteDoc(doc(db, FIRESTORE_COLLECTION_PATH, docId));
-                showCopyMessage('批次記錄已刪除。', 'bg-red-600');
-            } catch (e) {
-                console.error("Error deleting document: ", e);
-                showCopyMessage("刪除失敗：請檢查網路或權限。", 'bg-red-600');
-            }
-        }
-
-        // --- 資料解析邏輯 (保持不變) ---
-        function parseRmaText(input) {
-            const data = {};
-            if (!input) return data;
-
-            const patterns = [
-                { key: 'rmaNo', regex: /RMA Number:\s*(.*)/i },
-                { key: 'defectiveSn', regex: /Defective Serial Number:\s*(.*)/i },
-                { key: 'productID', regex: /Defective Product ID:\s*(.*)/i },
-                { key: 'productDesc', regex: /Defective Product Description:\s*(.*)/i },
-            ];
-            
-            patterns.forEach(({ key, regex }) => {
-                const match = input.match(regex);
-                if (match && match[1]) {
-                    data[key] = match[1].trim();
-                }
-            });
-
-            return data;
-        }
-
-        function parseExchangeText(input) {
-            const data = { productID: '', notes: '' }; 
-            if (!input) return data;
-
-            const defectiveSnMatch = input.match(/(舊序號|old)\s*[:：]\s*(.*)/i);
-            const replacementSnMatch = input.match(/(新序號|new)\s*[:：]\s*(.*)/i);
-            const snRegex = /(舊序號|old|新序號|new)\s*[:：]/i;
-
-            data.defectiveSn = defectiveSnMatch ? defectiveSnMatch[2].trim() : '';
-            data.replacementSn = replacementSnMatch ? replacementSnMatch[2].trim() : '';
-
-            let notes = [];
-            const lines = input.split('\n').map(line => line.trim()).filter(line => line.length > 0);
-
-            let isFirstLine = true;
-            lines.forEach(line => {
-                if (line.match(snRegex)) {
-                    return; 
-                }
-                
-                if (isFirstLine) {
-                    const productMatch = line.match(/-(.+?)-\d{2}$/);
-                    data.productID = productMatch ? productMatch[1].trim() : '';
-                }
-
-                notes.push(line);
-                
-                isFirstLine = false; 
-            });
-            
-            data.notes = notes.join('\n').trim();
-            
-            return data;
-        }
-
-        // --- 資料處理與新增/合併 (保持不變) ---
-
-        window.extractAndAddItem = function(type) {
-            let input, parsedData;
-
-            if (type === 'standard') {
-                input = document.getElementById('modalRmaInput').value;
-                parsedData = parseRmaText(input);
-                hidePasteModal();
-            } else if (type === 'exchange') {
-                input = document.getElementById('modalExchangeInput').value;
-                parsedData = parseExchangeText(input);
-                hideExchangeModal();
-            } else {
-                return;
-            }
-
-            if (parsedData.rmaNo || parsedData.defectiveSn || parsedData.replacementSn) {
-                let isMerged = false;
-                
-                if (rmaItems.length > 0) {
-                    const lastItem = rmaItems[rmaItems.length - 1];
-                    const isLastItemBlank = !lastItem.rmaNo && !lastItem.defectiveSn && !lastItem.replacementSn;
-                    
-                    if (type === 'exchange' || isLastItemBlank) {
-                        lastItem.rmaNo = lastItem.rmaNo || parsedData.rmaNo || '';
-                        lastItem.defectiveSn = lastItem.defectiveSn || parsedData.defectiveSn || '';
-                        lastItem.replacementSn = lastItem.replacementSn || parsedData.replacementSn || '';
-                        lastItem.productID = lastItem.productID || parsedData.productID || '';
-                        lastItem.productDesc = lastItem.productDesc || parsedData.productDesc || '';
-                        lastItem.notes = lastItem.notes || parsedData.notes || ''; 
-
-                        isMerged = true;
-                    }
-                }
-
-                if (!isMerged) {
-                    const newItem = {
-                        id: Date.now() + Math.random(), 
-                        rmaNo: parsedData.rmaNo || '',
-                        defectiveSn: parsedData.defectiveSn || '',
-                        replacementSn: parsedData.replacementSn || '',
-                        productID: parsedData.productID || '',
-                        productDesc: parsedData.productDesc || '',
-                        trackingNumber: '',
-                        notes: parsedData.notes || '',
-                    };
-                    rmaItems.push(newItem);
-                }
-                
-                renderRmaItems();
-            } else {
-                console.error("無法解析 RMA 資訊。");
-            }
-        }
-
-        window.addItem = function() {
-            const newItem = {
-                id: Date.now() + Math.random(), 
-                rmaNo: '',
-                defectiveSn: '',
-                productID: '',
-                productDesc: '',
-                replacementSn: '',
-                trackingNumber: '',
-                notes: ''
-            };
-            rmaItems.push(newItem);
-            renderRmaItems();
-        }
-
-        window.deleteItem = function(index) {
-            rmaItems.splice(index, 1);
-            renderRmaItems();
-        }
-
-        window.moveItemUp = function(index) {
-            if (index > 0) {
-                [rmaItems[index], rmaItems[index - 1]] = [rmaItems[index - 1], rmaItems[index]];
-                renderRmaItems();
-            }
-        }
-
-        window.moveItemDown = function(index) {
-            if (index < rmaItems.length - 1) {
-                [rmaItems[index], rmaItems[index + 1]] = [rmaItems[index + 1], rmaItems[index]];
-                renderRmaItems();
-            }
-        }
-
-        window.handleInputChange = function(index, field, value) {
-            if (rmaItems[index]) {
-                rmaItems[index][field] = value;
-                updateOutput();
-            }
-        }
-
-        // --- 渲染與輸出邏輯 (包含 C. 區塊) ---
-
-        function renderRmaItems() {
-            const container = document.getElementById('rmaListContainer');
-            
-            if (rmaItems.length === 0) {
-                container.innerHTML = `<div class="p-6 text-center text-gray-500 italic">目前沒有 RMA 記錄，請點擊上方按鈕新增資料。</div>`;
-                updateOutput();
-                return;
-            }
-            
-            let html = `
-                <table class="w-full text-sm input-table">
-                    <thead>
-                        <tr class="bg-gray-200">
-                            <th class="w-4">#</th>
-                            <th>RMA No.</th>
-                            <th>設備 ID</th>
-                            <th>故障序號 (Def. SN)</th>
-                            <th class="bg-red-100">換上序號 (Rep. SN)</th>
-                            <th class="bg-red-100">貨運單號 (Tracking)</th>
-                            <th class="bg-red-100">備註/描述</th>
-                            <th class="w-16">操作</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-            `;
-
-            rmaItems.forEach((item, index) => {
-                const placeholderNotes = item.productDesc || '手動輸入備註...';
-
-                html += `
-                    <tr class="hover:bg-gray-100 border-t border-gray-200">
-                        <td class="text-center">${index + 1}</td>
-                        <td>
-                            <input type="text" value="${item.rmaNo}" oninput="handleInputChange(${index}, 'rmaNo', this.value)" placeholder="RMA No." />
-                        </td>
-                        <td>
-                            <input type="text" value="${item.productID}" oninput="handleInputChange(${index}, 'productID', this.value)" placeholder="產品型號" />
-                        </td>
-                        <td>
-                            <input type="text" value="${item.defectiveSn}" oninput="handleInputChange(${index}, 'defectiveSn', this.value)" placeholder="故障序號" />
-                        </td>
-                        <td>
-                            <input type="text" value="${item.replacementSn}" oninput="handleInputChange(${index}, 'replacementSn', this.value)" placeholder="必填" class="bg-green-50" />
-                        </td>
-                        <td>
-                            <input type="text" value="${item.trackingNumber}" oninput="handleInputChange(${index}, 'trackingNumber', this.value)" placeholder="必填" class="bg-blue-50" />
-                        </td>
-                        <td>
-                            <input type="text" value="${item.notes}" oninput="handleInputChange(${index}, 'notes', this.value)" placeholder="${placeholderNotes}" />
-                        </td>
-                        <td class="text-center">
-                            <div class="flex flex-col items-center space-y-1">
-                                <!-- Move Up Button -->
-                                <button onclick="moveItemUp(${index})" 
-                                    class="text-gray-500 hover:text-indigo-700 p-1 rounded transition disabled:opacity-30" 
-                                    ${index === 0 ? 'disabled' : ''} title="上移">
-                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 10l7-7m0 0l7 7m-7-7v18"></path></svg>
-                                </button>
-                                <!-- Move Down Button -->
-                                <button onclick="moveItemDown(${index})" 
-                                    class="text-gray-500 hover:text-indigo-700 p-1 rounded transition disabled:opacity-30" 
-                                    ${index === rmaItems.length - 1 ? 'disabled' : ''} title="下移">
-                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"></path></svg>
-                                </button>
-                                <!-- Delete Button -->
-                                <button onclick="deleteItem(${index})" class="text-red-500 hover:text-red-700 p-1 rounded transition" title="刪除">
-                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3m-3 0h14"></path></svg>
-                                </button>
-                            </div>
-                        </td>
-                    </tr>
-                `;
-            });
-
-            html += `
-                    </tbody>
-                </table>
-            `;
-            container.innerHTML = html;
-            updateOutput();
-        }
-
-        function updateOutput() {
-            document.getElementById('itemCount').textContent = rmaItems.length;
-            
-            const { htmlTable, plaintextTable } = generateTables(rmaItems);
-            const shippingForms = generateShippingForms(rmaItems);
-
-            document.getElementById('htmlTableOutput').innerHTML = htmlTable;
-            document.getElementById('plaintextTableOutput').textContent = plaintextTable;
-            document.getElementById('shippingFormsOutput').innerHTML = shippingForms;
-        }
-
-        function generateTables(items) {
-            if (items.length === 0) {
-                const emptyMsg = '<p class="text-gray-500 italic">無 RMA 記錄可生成表格。</p>';
-                return { htmlTable: emptyMsg, plaintextTable: '無 RMA 記錄可生成表格' };
-            }
-
-            let bodyHtml = '';
-            const thStyle = "border: 1px solid #e5e7eb; padding: 10px 12px; text-align: left; background-color: #f3f4f6; font-weight: 600;";
-            const tdStyle = "border: 1px solid #e5e7eb; padding: 10px 12px; text-align: left;";
-            const tdSnStyle = "border: 1px solid #e5e7eb; padding: 10px 12px; text-align: left; font-weight: bold; color: #10B981;"; 
-            const tdTrackStyle = "border: 1px solid #e5e7eb; padding: 10px 12px; text-align: left; font-weight: bold; color: #3B82F6;"; 
-
-            items.forEach(item => {
-                let displayNotes = item.notes.trim() || 'N/A';
-
-                bodyHtml += `
-                    <tr>
-                        <td style="${tdStyle}">${item.rmaNo || 'N/A'}</td>
-                        <td style="${tdStyle}">${item.productID || 'N/A'}</td>
-                        <td style="${tdSnStyle}">${item.replacementSn || '【待確認】'}</td>
-                        <td style="${tdStyle}">${item.defectiveSn || 'N/A'}</td>
-                        <td style="${tdStyle}">${displayNotes}</td>
-                        <td style="${tdTrackStyle}">${item.trackingNumber || '【待填寫】'}</td>
-                    </tr>
-                `;
-            });
-
-            const tableStyle = "width: 100%; border-collapse: collapse; font-size: 0.9rem; font-family: 'Inter', 'Microsoft JhengHei', sans-serif;";
-            
-            const htmlTable = `
-                <table style="${tableStyle}">
-                    <thead>
-                        <tr>
-                            <th style="${thStyle}">RMA</th>
-                            <th style="${thStyle}">設備型號 (Product ID)</th>
-                            <th style="${thStyle}">換上序號 (Replacement SN)</th>
-                            <th style="${thStyle}">換下序號 (Defective SN)</th>
-                            <th style="${thStyle}">備註 (Notes)</th>
-                            <th style="${thStyle}">貨運單號 (Tracking)</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${bodyHtml.trim()}
-                    </tbody>
-                </table>
-            `;
-
-            const plaintextHeader = [
-                "RMA", "設備型號 (Product ID)", "換上序號 (Replacement SN)", 
-                "換下序號 (Defective SN)", "備註 (Notes)", "貨運單號 (Tracking)"
-            ];
-            
-            let plaintextOutput = plaintextHeader.join('\t') + '\n'; 
-
-            items.forEach(item => {
-                const displayNotes = item.notes.trim();
-                
-                const row = [
-                    item.rmaNo || '',
-                    item.productID || '',
-                    item.replacementSn || '',
-                    item.defectiveSn || '',
-                    displayNotes,
-                    item.trackingNumber || '',
-                ];
-                plaintextOutput += row.join('\t') + '\n';
-            });
-            
-            return { htmlTable: htmlTable.trim(), plaintextTable: plaintextOutput.trim() };
-        }
-        
-        // C. 寄件表格生成函數 (已修正為單據樣式，並強化字體大小和粗細)
-        window.generateShippingForms = function(items) {
-            if (items.length === 0) {
-                return '<p class="text-gray-500 italic">無 RMA 記錄可生成寄件表格。</p>';
-            }
-
-            let allFormsHtml = '';
-            
-            // 直接使用常量
-            const toInfo = RECIPIENT_TO; 
-            const toAddress = RECIPIENT_ADDRESS; 
-
-            items.forEach((item, index) => {
-                const productDescription = item.productDesc || (item.productID ? `${item.productID}, HW and OS` : 'N/A, HW and OS');
-                
-                const itemHtml = `
-                    <div class="shipping-form p-6 mb-8 bg-white" style="page-break-after: always; width: 100%; max-width: 800px; margin: 20px auto; border: 2px solid #333; font-size: 16px;">
-                        <h4 class="text-xl font-bold mb-4 border-b pb-2 text-indigo-700" style="font-size: 1.5rem; border-color: #3b82f6;">RMA 寄件明細 (${index + 1}/${items.length})</h4>
-                        
-                        <!-- 1. 寄件人資訊 (單行區塊) - 保持清晰可見 -->
-                        <div class="mb-4 pb-2 border-b border-gray-400">
-                            <p class="text-base font-bold text-gray-800" style="font-size: 16px;">${SENDER_INFO}</p>
-                        </div>
-                        
-                        <!-- 2. 收件人表格 - 強化字體 -->
-                        <div class="mb-4 border border-black shipping-detail-table">
-                            <table class="shipping-detail-table" style="width: 100%; border-collapse: collapse;">
-                                <thead>
-                                    <tr>
-                                        <th style="width: 25%; background-color: #e5e5e5; border-color: #000; font-size: 16px;">TO:</th>
-                                        <td style="width: 75%; font-weight: bold; color: #cc0000; border-color: #000; font-size: 18px;">${toInfo}</td>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <tr>
-                                        <th style="width: 25%; background-color: #e5e5e5; border-color: #000; font-size: 16px;">地址:</th>
-                                        <td style="width: 75%; border-color: #000; font-weight: bold; font-size: 16px;">${toAddress}</td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
-                        
-                        <!-- 3. RMA Details (明細表格) - 強化字體 -->
-                        <div class="mt-4 border border-black shipping-detail-table">
-                            <h5 class="font-bold p-2 text-base bg-gray-200 border-b border-black" style="font-size: 1.1rem; padding: 8px;">RMA Details</h5>
-                            <table class="shipping-detail-table" style="width: 100%; border-collapse: collapse;">
-                                <tbody>
-                                    <tr>
-                                        <th style="width: 40%; background-color: #f3f4f6; border-color: #000; font-size: 16px;">RMA Number:</th>
-                                        <td style="width: 60%; font-weight: bold; color: #d97706; border-color: #000; font-size: 20px;">${item.rmaNo || '【待填寫】'}</td>
-                                    </tr>
-                                    <tr>
-                                        <th style="width: 40%; background-color: #f3f4f6; border-color: #000; font-size: 16px;">Defective Serial Number:</th>
-                                        <td style="width: 60%; border-color: #000; font-weight: bold; font-size: 18px;">${item.defectiveSn || 'N/A'}</td>
-                                    </tr>
-                                    <tr>
-                                        <th style="width: 40%; background-color: #f3f4f6; border-color: #000; font-size: 16px;">Defective Product ID:</th>
-                                        <td style="width: 60%; border-color: #000; font-weight: bold; font-size: 18px;">${item.productID || 'N/A'}</td>
-                                    </tr>
-                                    <tr>
-                                        <th style="width: 40%; background-color: #f3f4f6; border-color: #000; font-size: 16px;">Defective Product Description:</th>
-                                        <td style="width: 60%; border-color: #000; font-weight: bold; font-size: 16px;">${productDescription}</td>
-                                    </tr>
-                                    <tr>
-                                        <th style="width: 40%; background-color: #f3f4f6; border-color: #000; font-size: 16px;">Service Level:</th>
-                                        <td style="width: 60%; border-color: #000; font-weight: bold; font-size: 16px;">${SERVICE_LEVEL}</td>
-                                    </tr>
-                                    ${item.notes ? 
-                                    `<tr>
-                                        <th style="width: 40%; background-color: #f3f4f6; border-color: #000; font-size: 16px;">備註/問題描述:</th>
-                                        <td style="width: 60%; border-color: #000; white-space: pre-wrap; font-weight: bold; font-size: 16px;">${item.notes}</td>
-                                    </tr>`
-                                    : ''}
-                                </tbody>
-                            </table>
-                        </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="flex items-center text-sm font-semibold text-gray-600 mb-1">
+                        <User className="w-4 h-4 mr-1 text-[#7FB5B5]" /> 訂購人 <span className="text-red-400 ml-1">*</span>
+                      </label>
+                      <input type="text" name="buyerName" value={formData.buyerName} onChange={handleInputChange} className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 bg-gray-50 ${errors.buyerName ? 'border-red-400 focus:ring-red-300' : 'border-gray-200 focus:ring-pink-300'}`} placeholder="如: 王小明" />
+                      {errors.buyerName && <p className="text-xs text-red-500 mt-1">{errors.buyerName}</p>}
                     </div>
-                `;
-                allFormsHtml += itemHtml;
-            });
+                    <div>
+                      <label className="flex items-center text-sm font-semibold text-gray-600 mb-1">
+                        <FileText className="w-4 h-4 mr-1 text-[#7FB5B5]" /> 商品名稱
+                      </label>
+                      <input type="text" name="itemName" value={formData.itemName} onChange={handleInputChange} className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-300 bg-gray-50" placeholder="選填" />
+                    </div>
+                  </div>
+                </div>
 
-            return allFormsHtml;
-        }
-        
-        // 列印所有寄件表格
-        window.printShippingForms = function() {
-            const content = document.getElementById('shippingFormsOutput').innerHTML;
-            
-            if (rmaItems.length === 0) {
-                showCopyMessage('無 RMA 記錄可列印！', 'bg-red-600', 'printShippingBtn');
-                return;
-            }
+                <div className="border-t border-dashed border-gray-200 my-2"></div>
 
-            // 創建一個臨時視窗來包含內容並觸發列印
-            const printWindow = window.open('', '', 'height=600,width=800');
-            printWindow.document.write('<html><head>');
-            
-            // 移除 title，避免瀏覽器在頁面頂部印出標題
-            // printWindow.document.write('<title>RMA 寄件表格列印</title>'); // 移除此行
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="flex items-center text-sm font-semibold text-gray-600 mb-1">
+                        <JapaneseYen className="w-4 h-4 mr-1 text-pink-500" /> 日幣原價 <span className="text-red-400 ml-1">*</span>
+                      </label>
+                      {formData.category === '扭蛋' ? (
+                        <select name="jpyPrice" value={formData.jpyPrice} onChange={handleInputChange} className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 bg-gray-50 font-mono ${errors.jpyPrice ? 'border-red-400' : 'border-gray-200 focus:ring-pink-300'}`}>
+                          <option value="">請選擇扭蛋金額</option>
+                          {Object.keys(GACHA_PRICES).map(price => <option key={price} value={price}>¥{price}</option>)}
+                        </select>
+                      ) : formData.category === '神社御守' ? (
+                        <select name="jpyPrice" value={formData.jpyPrice} onChange={handleInputChange} className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 bg-gray-50 font-mono ${errors.jpyPrice ? 'border-red-400' : 'border-gray-200 focus:ring-pink-300'}`}>
+                          <option value="">請選擇御守金額</option>
+                          {Object.keys(OMAMORI_PRICES).map(price => <option key={price} value={price}>¥{price}</option>)}
+                        </select>
+                      ) : (
+                        <input type="number" name="jpyPrice" value={formData.jpyPrice} onChange={handleInputChange} min="0" step="1" placeholder="輸入金額" className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 bg-gray-50 font-mono ${errors.jpyPrice ? 'border-red-400 focus:ring-red-300' : 'border-gray-200 focus:ring-pink-300'}`} />
+                      )}
+                      {errors.jpyPrice && <p className="text-xs text-red-500 mt-1">{errors.jpyPrice}</p>}
+                    </div>
 
-            // 引入列印專用樣式
-            printWindow.document.write(`
-                <style>
-                    /* 1. 移除頁面邊距和預設標題/頁腳，嘗試橫向 A4 佈局 */
-                    @page { 
-                        size: A4 landscape; /* 嘗試設置橫向 A4 */
-                        margin: 0.5cm; /* 設置極小邊距 */
-                    }
-                    
-                    body { 
-                        font-family: 'Inter', 'Microsoft JhengHei', sans-serif; 
-                        margin: 0; 
-                        padding: 0; 
-                        background-color: white; 
-                        width: 100%; /* 確保內容佔滿寬度 */
-                    }
-                    
-                    /* 2. 強制每一筆記錄列印在新的一頁 */
-                    .shipping-form { 
-                        page-break-after: always; 
-                        border: 2px solid #000; /* 列印時確保外框清晰可見 */
-                        box-shadow: none; 
-                        padding: 15px; /* 略微縮小 padding 讓內容更緊湊 */
-                        width: 98%; /* 盡可能佔滿 A4 寬度 */
-                        margin: 5px auto; /* 小邊距 */
-                    }
+                    {['一般商品', '平台代標', '一番賞'].includes(formData.category) && (
+                      <div>
+                        <label className="flex items-center text-sm font-semibold text-gray-600 mb-1">
+                          <Calculator className="w-4 h-4 mr-1 text-pink-400" /> 匯率
+                        </label>
+                        <select name="exchangeRate" value={formData.exchangeRate} onChange={handleInputChange} disabled={formData.category === '一番賞'} className={`w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-300 font-mono ${formData.category === '一番賞' ? 'bg-gray-200 text-gray-500 cursor-not-allowed' : 'bg-gray-50'}`}>
+                          {formData.category === '一番賞' ? <option value="0.3">0.3 (鎖定)</option> : exchangeRateOptions.map(rate => <option key={rate} value={rate}>{rate}</option>)}
+                        </select>
+                      </div>
+                    )}
+                  </div>
 
-                    /* 3. 強化字體大小和粗細 */
-                    .shipping-form p, .shipping-form th, .shipping-form td { 
-                        font-size: 18px !important; /* 基礎字體放大 */
-                        font-weight: normal; 
-                    }
-                    
-                    .shipping-form h4 {
-                        font-size: 1.5rem !important;
-                        border-bottom: 2px solid #3b82f6 !important;
-                        padding-bottom: 8px;
-                        margin-bottom: 10px;
-                        color: #1f2937;
-                    }
+                  {['一般商品', '一番賞', '平台代標'].includes(formData.category) && (
+                    <div>
+                      <label className="flex items-center text-sm font-semibold text-gray-600 mb-1">
+                        <Scale className="w-4 h-4 mr-1 text-blue-400" /> 商品重量 (kg) <span className="text-red-400 ml-1">*</span>
+                      </label>
+                      <input type="number" name="weight" value={formData.weight} onChange={handleInputChange} min="0" step="0.01" className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 bg-gray-50 font-mono ${errors.weight ? 'border-red-400 focus:ring-red-300' : 'border-gray-200 focus:ring-blue-300'}`} placeholder="輸入重量 (每kg $190)" />
+                      {errors.weight && <p className="text-xs text-red-500 mt-1">{errors.weight}</p>}
+                    </div>
+                  )}
+                </div>
 
-                    .shipping-detail-table th, .shipping-detail-table td { 
-                        border: 1px solid #000 !important; 
-                        padding: 10px !important; 
-                        height: auto;
-                    }
-                    .shipping-detail-table th {
-                        background-color: #f3f4f6;
-                        font-weight: bold !important;
-                    }
-                    /* 關鍵資訊特大字體 */
-                    .key-rma-number { font-size: 24px !important; font-weight: bold !important; color: #cc0000 !important; }
-                    .key-serial-number { font-size: 20px !important; font-weight: bold !important; }
-                </style>
-            `);
-            
-            printWindow.document.write('</head><body>');
-            printWindow.document.write(content);
-            printWindow.document.write('</body></html>');
-            printWindow.document.close();
-            
-            // 等待內容載入後列印
-            printWindow.onload = function() {
-                printWindow.print();
-                printWindow.close();
-            }
-            showCopyMessage('正在準備列印...', 'bg-yellow-600', 'printShippingBtn');
-        }
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 mt-4 space-y-2">
+                  <div className="flex justify-between text-sm text-gray-600 items-center">
+                    <span>商品台幣價：</span><span className="font-mono">NT$ {calculation.twdPrice.toLocaleString()}</span>
+                  </div>
+                  {['一般商品', '一番賞', '平台代標'].includes(formData.category) ? (
+                    <div className="flex justify-between text-sm text-gray-600 items-center">
+                      <span className="flex items-center"><Plane className="w-3 h-3 mr-1"/> 預估國際運費：</span>
+                      <span className="font-mono text-blue-600">NT$ {calculation.shippingFee.toLocaleString()}</span>
+                    </div>
+                  ) : (
+                    <div className="flex justify-between text-xs text-gray-400 items-center">
+                      <span className="flex items-center"><Plane className="w-3 h-3 mr-1"/> 國際運費：</span><span>(已包含於定價中)</span>
+                    </div>
+                  )}
+                  <div className="border-t border-gray-200 pt-2 flex justify-between items-center font-bold">
+                    <span className="text-gray-700">應收總額：</span><span className="text-pink-600 font-mono text-xl">NT$ {calculation.total.toLocaleString()}</span>
+                  </div>
+                </div>
 
-        // 複製寄件表格 HTML 給 Word/Email
-        window.copyShippingForms = function() {
-            const outputElement = document.getElementById('shippingFormsOutput');
-            
-            if (rmaItems.length === 0) {
-                showCopyMessage('無內容可複製！請新增 RMA 記錄。', 'bg-red-600', 'copyShippingBtn');
-                return;
-            }
-            
-            // 複製完整的 HTML 內容，以便貼到 Word 或郵件客戶端
-            fallbackCopy(outputElement.innerHTML, 'html', 'copyShippingBtn');
-        }
+                <button type="submit" className="w-full py-3.5 mt-2 bg-[#5c7a99] hover:bg-[#4a637c] text-white font-bold rounded-xl transition-all shadow-md hover:shadow-lg flex justify-center items-center group active:scale-[0.98]">
+                  <CheckCircle2 className="w-5 h-5 mr-2 group-hover:scale-110 transition-transform" /> 確認並登記訂單
+                </button>
+              </form>
+            </div>
 
-        
-        // --- 剪貼簿邏輯 (保持不變) ---
+            <div className="xl:col-span-8 flex flex-col space-y-6">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col justify-center">
+                  <div className="text-xs text-gray-500 mb-1 font-bold">已登錄筆數</div>
+                  <div className="text-2xl font-bold text-[#5c7a99]">{orders.length} <span className="text-sm font-normal text-gray-400">筆</span></div>
+                </div>
+                <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col justify-center">
+                  <div className="text-xs text-gray-500 mb-1 font-bold">日幣支出總計</div>
+                  <div className="text-xl font-bold text-gray-700 font-mono">¥ {summary.totalJpy.toLocaleString()}</div>
+                </div>
+                <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col justify-center">
+                  <div className="text-xs text-gray-500 mb-1 font-bold">預估運費總計</div>
+                  <div className="text-xl font-bold text-blue-500 font-mono">$ {summary.totalShipping.toLocaleString()}</div>
+                </div>
+                <div className="bg-[#5c7a99] p-4 rounded-2xl shadow-md border border-slate-200 flex flex-col justify-center relative overflow-hidden">
+                  <div className="absolute top-0 right-0 opacity-10"><Calculator className="w-16 h-16 transform translate-x-2 -translate-y-2" /></div>
+                  <div className="text-xs text-blue-100 mb-1 font-bold relative z-10">台幣應收總額</div>
+                  <div className="text-2xl font-bold text-white font-mono relative z-10">$ {summary.totalRevenue.toLocaleString()}</div>
+                </div>
+              </div>
 
-        function showCopyMessage(msg, bgColor, buttonId) {
-            const copiedMsg = document.getElementById('copiedMsg');
-            copiedMsg.textContent = msg;
-            copiedMsg.className = `copied-message fixed bottom-4 right-4 ${bgColor} text-white px-5 py-3 rounded-xl shadow-2xl show`;
-
-            if (buttonId) {
-                const button = document.getElementById(buttonId);
-                const originalHtml = button.innerHTML;
-                button.innerHTML = '<svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> 已複製';
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 flex-1 overflow-hidden flex flex-col min-h-[400px]">
+                <div className="bg-slate-50 px-6 py-4 border-b border-slate-200 flex justify-between items-center flex-wrap gap-3">
+                  <h2 className="text-lg font-bold text-[#5c7a99] flex items-center">
+                    <FileText className="w-5 h-5 mr-2" /> 訂單試算總表 (明細)
+                  </h2>
+                  <div className="flex items-center space-x-2">
+                    <button onClick={handleExportCSV} className="flex items-center px-3 py-1.5 text-sm font-medium text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-100 transition-colors shadow-sm active:scale-95">
+                      <Download className="w-4 h-4 mr-1.5" /> 匯出 CSV
+                    </button>
+                    <button onClick={handleSyncToSheets} disabled={isSyncing} className="flex items-center px-3 py-1.5 text-sm font-medium text-white bg-[#7FB5B5] border border-transparent rounded-lg hover:bg-[#6ca4a4] transition-colors shadow-sm disabled:opacity-70 active:scale-95">
+                      {isSyncing ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <UploadCloud className="w-4 h-4 mr-1.5" />}
+                      {isSyncing ? '同步中...' : '上傳至 Google 試算表'}
+                    </button>
+                  </div>
+                </div>
                 
-                setTimeout(() => {
-                    button.innerHTML = originalHtml;
-                }, 2000);
-            }
+                <div className="overflow-x-auto flex-1">
+                  {orders.length === 0 ? (
+                    <div className="h-full min-h-[300px] flex flex-col items-center justify-center p-12 text-gray-400">
+                      <div className="bg-slate-50 p-6 rounded-full mb-4"><FileText className="w-12 h-12 text-slate-300" /></div>
+                      <p className="font-medium text-slate-500">尚無資料，請由左側面板新增訂單</p>
+                      <p className="text-sm mt-2">系統會自動依照分類套用計價規則</p>
+                    </div>
+                  ) : (
+                    <table className="w-full text-left border-collapse min-w-[700px]">
+                      <thead>
+                        <tr className="bg-slate-100 text-slate-600 text-sm border-b border-slate-200">
+                          <th className="p-3 font-semibold whitespace-nowrap pl-6">建立時間</th>
+                          <th className="p-3 font-semibold whitespace-nowrap">訂購人</th>
+                          <th className="p-3 font-semibold min-w-[140px]">分類 / 商品</th>
+                          <th className="p-3 font-semibold text-right">日幣 (公式)</th>
+                          <th className="p-3 font-semibold text-right">重量/運費</th>
+                          <th className="p-3 font-bold text-right text-[#5c7a99]">應收台幣</th>
+                          <th className="p-3 font-semibold text-center pr-6">操作</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {orders.map((order, idx) => (
+                          <tr key={order.id} className={`border-b border-slate-100 hover:bg-pink-50/50 transition-colors text-sm ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/30'}`}>
+                            <td className="p-3 pl-6 text-gray-400 text-xs font-mono">{order.date}</td>
+                            <td className="p-3 font-bold text-gray-700">{order.buyerName}</td>
+                            <td className="p-3">
+                              <div className={`inline-block px-2 py-0.5 rounded text-xs font-bold mb-1 
+                                ${order.category === '扭蛋' ? 'bg-yellow-100 text-yellow-700' : 
+                                  order.category === '神社御守' ? 'bg-red-100 text-red-700' : 
+                                  order.category === '一番賞' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
+                                {order.category}
+                              </div>
+                              <div className="text-gray-600 truncate max-w-[150px]" title={order.itemName}>{order.itemName || '-'}</div>
+                            </td>
+                            <td className="p-3 text-right">
+                              <div className="font-mono text-gray-700">¥{order.jpyPrice.toLocaleString()}</div>
+                              <div className="text-[11px] text-gray-400">
+                                {['扭蛋', '神社御守'].includes(order.category) ? '(固定表價)' : `(x${order.exchangeRate})`}
+                              </div>
+                            </td>
+                            <td className="p-3 text-right">
+                              {['扭蛋', '神社御守'].includes(order.category) ? (
+                                <div className="text-[11px] text-gray-400 bg-gray-100 rounded px-1 inline-block">已含運</div>
+                              ) : (
+                                <>
+                                  <div className="text-gray-700 font-mono">{order.weight} kg</div>
+                                  <div className="text-xs text-blue-500 font-mono">+${order.shippingFee.toLocaleString()}</div>
+                                </>
+                              )}
+                            </td>
+                            <td className="p-3 text-right font-bold text-pink-600 font-mono text-base">
+                              ${order.totalPrice.toLocaleString()}
+                            </td>
+                            <td className="p-3 text-center pr-6">
+                              <button onClick={() => handleDeleteOrder(order.id)} className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors" title="刪除紀錄">
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    };
 
-            setTimeout(() => {
-                copiedMsg.classList.remove('show');
-                copiedMsg.className = `copied-message fixed bottom-4 right-4 bg-gray-800 text-white px-5 py-3 rounded-xl shadow-2xl`; 
-            }, 2000);
-        }
-
-        window.copyTableContent = function(type) {
-            const outputElement = type === 'html' ? 
-                document.getElementById('htmlTableOutput').querySelector('table') :
-                document.getElementById('plaintextTableOutput');
-            
-            const buttonId = type === 'html' ? 'copyHtmlBtn' : 'copyPlaintextBtn';
-
-            if (rmaItems.length === 0) {
-                showCopyMessage('無內容可複製！請新增 RMA 記錄。', 'bg-red-600');
-                return;
-            }
-
-            const contentToCopy = type === 'html' ? outputElement.outerHTML : outputElement.textContent;
-
-            fallbackCopy(contentToCopy, type, buttonId);
-        }
-        
-        function fallbackCopy(content, type, buttonId) {
-            let tempEl;
-            
-            if (type === 'html') {
-                tempEl = document.createElement('div');
-                tempEl.innerHTML = content;
-                document.body.appendChild(tempEl);
-
-                const selection = window.getSelection();
-                const range = document.createRange();
-                range.selectNodeContents(tempEl);
-                selection.removeAllRanges();
-                selection.addRange(range);
-                
-            } else {
-                tempEl = document.createElement('textarea');
-                tempEl.value = content;
-                document.body.appendChild(tempEl);
-                tempEl.select();
-            }
-            
-            tempEl.style.position = 'absolute';
-            tempEl.style.left = '-9999px';
-
-            try {
-                const successful = document.execCommand('copy');
-
-                if (type === 'html') {
-                    window.getSelection().removeAllRanges();
-                }
-
-                if (successful) {
-                    showCopyMessage(`${type === 'html' ? 'HTML 表格' : '純文字表格'}已成功複製！`, 'bg-blue-600', buttonId);
-                } else {
-                    showCopyMessage('複製失敗，請手動選取複製。', 'bg-red-600');
-                }
-            } catch (err) {
-                console.error('Copy failed (fallback):', err);
-                showCopyMessage('複製失敗，請手動選取複製。', 'bg-red-600');
-            }
-            document.body.removeChild(tempEl);
-        }
-
-        // 頁面載入時執行一次初始化
-        window.onload = function() {
-            renderRmaItems(); 
-        }
-    </script>
+    const root = createRoot(document.getElementById('root'));
+    root.render(<KoguriOrderSystem />);
+  </script>
 </body>
 </html>
